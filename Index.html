@@ -24,8 +24,11 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
-    .font-code {
+    .font-code, .exec-line, textarea, code, pre {
       font-family: 'JetBrains Mono', Consolas, Monaco, monospace !important;
+      font-variant-ligatures: none !important;
+      -webkit-font-variant-ligatures: none !important;
+      font-feature-settings: "liga" 0, "calt" 0 !important;
     }
     /* 防複製保護樣式 */
     .no-copy {
@@ -261,6 +264,9 @@
     /* 逐行執行器與變數表專屬樣式 */
     .exec-line {
       font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+      font-variant-ligatures: none !important;
+      -webkit-font-variant-ligatures: none !important;
+      font-feature-settings: "liga" 0, "calt" 0 !important;
       line-height: 1.6;
       border-radius: 4px;
       transition: background-color 0.15s ease, color 0.15s ease;
@@ -290,6 +296,7 @@
       font-weight: bold;
       font-variant-ligatures: none;
       -webkit-font-variant-ligatures: none;
+      font-feature-settings: "liga" 0, "calt" 0;
       border-radius: 4px;
       padding: 0 6px;
       outline: none;
