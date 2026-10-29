@@ -323,32 +323,45 @@
           </div>
         </div>
 
-        <!-- 老師管理按鈕群 (僅老師可見：統一圓角正方形尺寸，字體放大且圖示文字同行) -->
-        <div v-if="userInfo.isTeacher" class="flex items-center space-x-2.5">
-          <!-- 批次顯示全部隱藏題按鈕 (僅在當前課程有隱藏題目時亮起，下課一鍵解鎖) -->
+        <!-- 頂部動作列：全體可用按鈕 ＋ 老師管理按鈕群 -->
+        <div class="flex items-center space-x-2.5">
+          <!-- 🧪 自由練習沙盒按鈕 (全體學生與老師皆可使用) -->
           <button 
-            v-if="currentCourseHiddenCount > 0"
-            @click="confirmShowAllProblems" 
-            class="h-10 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition shadow-md shadow-blue-600/30 flex items-center gap-1.5 active:scale-95 group animate-pulse hover:animate-none"
-            title="下課一鍵解鎖：將目前課程中所有隱藏題目一次恢復為顯示，供學生課後自由練習">
-            <span class="text-base leading-none transition-transform group-hover:scale-110">👁️</span>
-            <span class="text-xs font-bold tracking-tight">顯示全部 ({{ currentCourseHiddenCount }})</span>
+            type="button"
+            @click="openSandboxModal" 
+            class="h-10 px-3.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white transition shadow-md shadow-indigo-600/30 flex items-center gap-1.5 active:scale-95 group border border-indigo-400/30"
+            title="開啟自由練習沙盒：支援線上輕量編譯與視覺化逐行除錯雙模系統">
+            <span class="text-base leading-none transition-transform group-hover:scale-110">🧪</span>
+            <span class="text-xs font-bold tracking-tight">自由練習沙盒</span>
           </button>
 
-          <button 
-            @click="openCourseModal" 
-            class="h-10 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 hover:text-white transition border border-slate-700 flex items-center gap-1.5 shadow-sm active:scale-95"
-            title="管理課程與新增分類">
-            <span class="text-base">📚</span>
-            <span class="text-xs font-bold tracking-tight">課程管理</span>
-          </button>
-          <button 
-            @click="openUploadModal" 
-            class="h-10 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-md shadow-indigo-600/30 flex items-center gap-1.5 active:scale-95 group"
-            title="發布新程式碼 (Carbon 圖片化)">
-            <span class="text-base leading-none transition-transform group-hover:scale-110">➕</span>
-            <span class="text-xs font-bold tracking-tight">上傳代碼</span>
-          </button>
+          <!-- 老師管理按鈕群 (僅老師可見：統一圓角正方形尺寸，字體放大且圖示文字同行) -->
+          <template v-if="userInfo.isTeacher">
+            <!-- 批次顯示全部隱藏題按鈕 (僅在當前課程有隱藏題目時亮起，下課一鍵解鎖) -->
+            <button 
+              v-if="currentCourseHiddenCount > 0"
+              @click="confirmShowAllProblems" 
+              class="h-10 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition shadow-md shadow-blue-600/30 flex items-center gap-1.5 active:scale-95 group animate-pulse hover:animate-none"
+              title="下課一鍵解鎖：將目前課程中所有隱藏題目一次恢復為顯示，供學生課後自由練習">
+              <span class="text-base leading-none transition-transform group-hover:scale-110">👁️</span>
+              <span class="text-xs font-bold tracking-tight">顯示全部 ({{ currentCourseHiddenCount }})</span>
+            </button>
+
+            <button 
+              @click="openCourseModal" 
+              class="h-10 px-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 hover:text-white transition border border-slate-700 flex items-center gap-1.5 shadow-sm active:scale-95"
+              title="管理課程與新增分類">
+              <span class="text-base">📚</span>
+              <span class="text-xs font-bold tracking-tight">課程管理</span>
+            </button>
+            <button 
+              @click="openUploadModal" 
+              class="h-10 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-md shadow-indigo-600/30 flex items-center gap-1.5 active:scale-95 group"
+              title="發布新程式碼 (Carbon 圖片化)">
+              <span class="text-base leading-none transition-transform group-hover:scale-110">➕</span>
+              <span class="text-xs font-bold tracking-tight">上傳代碼</span>
+            </button>
+          </template>
         </div>
       </div>
 
@@ -1486,6 +1499,587 @@
         <div class="mt-6 flex justify-end">
           <button @click="showCourseModal = false" class="px-4 py-2 text-xs bg-slate-800 text-slate-300 rounded-lg">關閉</button>
         </div>
+      </div>
+    </div>
+
+    <!-- ==================== 彈窗 4：自由練習沙盒 ＆ 線上輕量編譯/逐行除錯雙模系統 ==================== -->
+    <div
+      v-if="showSandboxModal"
+      class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm"
+      @click.self="closeSandboxModal">
+
+      <div class="relative bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-6xl xl:max-w-7xl h-[92vh] flex flex-col shadow-2xl overflow-hidden transition-all duration-200">
+        
+        <!-- 頂部工具列 (標題、雙模標籤、語言切換、🪄魔術棒、📥匯出、換行切換、關閉) -->
+        <div class="px-5 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between bg-slate-900/95 gap-3 shrink-0">
+          <!-- 左側：標題與目前模式徽章 -->
+          <div class="flex items-center space-x-2.5 min-w-0">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-purple-500 to-indigo-600 flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0">
+              <span class="text-base">🧪</span>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="font-bold text-sm text-white tracking-tight">自由練習沙盒</span>
+                <span 
+                  :class="sandboxMode === 'editor' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'"
+                  class="text-[11px] font-mono px-2 py-0.5 rounded-full border font-semibold flex items-center gap-1">
+                  <span>{{ sandboxMode === 'editor' ? '⚡ 輕量編譯模式' : '🔍 視覺化除錯模式' }}</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 中間：語言切換膠囊按鈕 (Python / C++) -->
+          <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs shrink-0">
+            <button
+              type="button"
+              @click="switchSandboxLang('python')"
+              :class="sandboxLang === 'python' ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+              class="px-3 py-1 rounded-lg transition flex items-center gap-1.5"
+              :disabled="sandboxMode === 'debug'">
+              <span>🐍</span> Python (Pyodide)
+            </button>
+            <button
+              type="button"
+              @click="switchSandboxLang('cpp')"
+              :class="sandboxLang === 'cpp' ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+              class="px-3 py-1 rounded-lg transition flex items-center gap-1.5"
+              :disabled="sandboxMode === 'debug'">
+              <span>⚡</span> C++ (JSCPP)
+            </button>
+          </div>
+
+          <!-- 右側工具快捷鍵：魔術棒美化、檔案匯出、換行開關、關閉 -->
+          <div class="flex items-center space-x-2 shrink-0">
+            <!-- 🪄 魔術棒按鈕 (僅在編輯模式可用) -->
+            <button
+              v-if="sandboxMode === 'editor'"
+              type="button"
+              @click="autoFormatSandboxCode"
+              class="h-8 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 transition border border-slate-700 text-xs flex items-center gap-1.5 active:scale-95 shadow-sm"
+              :title="sandboxLang === 'cpp' ? '自動調整縮排與排版美化 (C++ 嚴格 1TBS 規範)' : '自動調整縮排與排版美化 (Python PEP 8 規範)'">
+              <span class="text-sm">🪄</span>
+              <span class="hidden sm:inline">美化排版</span>
+            </button>
+
+            <!-- 📥 下載檔案按鈕 -->
+            <button
+              type="button"
+              @click="exportSandboxCode"
+              class="h-8 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition border border-slate-700 text-xs flex items-center gap-1.5 active:scale-95 shadow-sm"
+              title="下載目前程式碼檔案 (.py / .cpp)">
+              <span class="text-xs">📥</span>
+              <span class="hidden sm:inline">下載檔案</span>
+            </button>
+
+            <!-- ↩ 自動換行切換 -->
+            <button
+              type="button"
+              @click="sandboxWrapEnabled = !sandboxWrapEnabled"
+              :class="sandboxWrapEnabled ? 'bg-indigo-600/30 text-indigo-300 border-indigo-500/40 hover:bg-indigo-600/50' : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'"
+              class="h-8 px-2.5 rounded-lg text-xs border transition-colors flex items-center gap-1 select-none"
+              title="切換自動換行 / 水平捲動">
+              <span class="text-xs">↩</span>
+              <span class="hidden sm:inline">{{ sandboxWrapEnabled ? '自動換行' : '不換行' }}</span>
+            </button>
+
+            <!-- ✕ 關閉按鈕 -->
+            <button
+              type="button"
+              @click="closeSandboxModal"
+              class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition border border-slate-700 text-sm"
+              title="關閉沙盒">
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <!-- 主體內容：統一四宮格佈局 (左側 Input / 右側 Output) -->
+        <div class="flex-1 flex flex-col min-h-0 bg-slate-950">
+
+          <!-- 上半部 (觀測區 6/12 + 6/12)：左上程式碼 ＋ 右上輸出或變數表 -->
+          <div class="flex-1 grid grid-cols-1 md:grid-cols-12 min-h-0 overflow-hidden divide-y md:divide-y-0 md:divide-x divide-slate-800">
+            
+            <!-- ========== 左上：程式碼區 (md:col-span-6) ========== -->
+            <div class="md:col-span-6 flex flex-col min-h-0 bg-[#161622]">
+              <!-- 視窗控制列 -->
+              <div class="px-4 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-xs font-mono text-slate-400 shrink-0">
+                <div class="flex items-center gap-2">
+                  <div class="flex space-x-1.5">
+                    <span class="w-2.5 h-2.5 rounded-full bg-rose-500/80 inline-block"></span>
+                    <span class="w-2.5 h-2.5 rounded-full bg-amber-500/80 inline-block"></span>
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-500/80 inline-block"></span>
+                  </div>
+                  <span class="text-slate-200 font-bold ml-1">sandbox.{{ sandboxLang === 'cpp' ? 'cpp' : 'py' }}</span>
+                  <span v-if="sandboxMode === 'editor'" class="text-[10px] text-slate-500 hidden sm:inline">
+                    (支援 Tab 4格縮排 / 自動存檔)
+                  </span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span v-if="sandboxExecuting" class="text-indigo-400 animate-pulse flex items-center gap-1 text-[11px]">
+                    <span class="animate-spin text-xs">⏳</span> 運算中...
+                  </span>
+                  <span v-else-if="sandboxMode === 'debug' && sandboxExecFinished" class="text-emerald-400 text-[11px]">
+                    ✓ 執行完畢
+                  </span>
+                  <span v-else-if="sandboxMode === 'debug' && sandboxTotalSteps > 0" class="text-slate-400 text-[11px]">
+                    步驟 {{ sandboxCurrentStepIndex + 1 }} / {{ sandboxTotalSteps }}
+                  </span>
+                  <span v-else-if="sandboxMode === 'editor'" class="text-slate-500 text-[11px]">
+                    共 {{ sandboxLineCount }} 行
+                  </span>
+                </div>
+              </div>
+
+              <!-- 程式碼呈現區 -->
+              <!-- 狀態 A: 自由編輯模式 (帶即時對齊行號的 textarea) -->
+              <div 
+                v-if="sandboxMode === 'editor'" 
+                class="flex-1 flex min-h-0 overflow-hidden font-code text-xs bg-[#161622]">
+                <!-- 左側行號欄 (Gutter) -->
+                <div 
+                  ref="sandboxLineGutterRef"
+                  class="w-12 shrink-0 overflow-hidden py-3 pr-2 text-right text-slate-600 font-mono select-none border-r border-slate-800/80 leading-[1.625rem]">
+                  <div v-for="n in sandboxLineCount" :key="n">{{ n }}</div>
+                </div>
+
+                <!-- 右側程式碼編輯輸入區 -->
+                <textarea
+                  ref="sandboxEditorRef"
+                  v-model="sandboxCode"
+                  @input="onSandboxCodeInput"
+                  @scroll="syncSandboxEditorScroll"
+                  @keydown.tab.prevent="handleSandboxTab"
+                  spellcheck="false"
+                  placeholder="請在此輸入或貼上您的程式碼..."
+                  :class="sandboxWrapEnabled ? 'whitespace-pre-wrap break-words' : 'whitespace-pre overflow-x-auto'"
+                  class="flex-1 p-3 bg-transparent text-slate-100 font-code text-xs leading-[1.625rem] focus:outline-none resize-none selection:bg-indigo-600/40">
+                </textarea>
+              </div>
+
+              <!-- 狀態 B: 逐行除錯模式 (指針 ▶ 追蹤逐行清單) -->
+              <div 
+                v-else 
+                class="flex-1 overflow-y-auto p-3 font-code text-xs text-slate-200 space-y-0.5 select-none" 
+                ref="sandboxCodeScrollRef">
+                <div 
+                  v-for="(line, idx) in sandboxParsedCodeLines" 
+                  :key="idx"
+                  :class="[
+                    'exec-line flex items-start px-2 py-0.5 rounded transition-all duration-150',
+                    sandboxError && sandboxError.line === (idx + 1) ? 'exec-line-error' : '',
+                    (!sandboxError && sandboxCurrentExecutingLine === (idx + 1)) ? 'exec-line-active text-white font-semibold' : '',
+                    (hasSandboxExecutedLine(idx + 1) && sandboxCurrentExecutingLine !== (idx + 1) && !(sandboxError && sandboxError.line === (idx + 1))) ? 'exec-line-prev text-slate-300' : 'text-slate-400'
+                  ]">
+                  <!-- 行號與箭頭指針 -->
+                  <div class="w-12 shrink-0 flex items-center justify-between font-mono text-slate-500 text-[11px] pr-2 pt-0.5 select-none">
+                    <span class="text-red-400 font-bold"    v-if="sandboxError && sandboxError.line === (idx + 1)">💥</span>
+                    <span class="text-indigo-400 font-bold" v-else-if="sandboxCurrentExecutingLine === (idx + 1)">▶</span>
+                    <span v-else class="invisible">▶</span>
+                    <span>{{ idx + 1 }}</span>
+                  </div>
+
+                  <!-- 程式碼內容 -->
+                  <div 
+                    class="flex-1 min-w-0"
+                    :class="sandboxWrapEnabled ? 'whitespace-pre-wrap break-words leading-relaxed py-0.5' : 'whitespace-pre overflow-x-auto flex items-center'">
+                    <span>{{ line.rawText }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 錯誤訊息診斷面板 (出錯時展開) -->
+              <div 
+                v-if="sandboxError" 
+                class="error-panel-enter bg-red-950/90 border-t border-red-500/50 p-3 shrink-0 max-h-52 overflow-y-auto font-sans shadow-lg select-text">
+                <div class="flex items-center justify-between mb-1.5">
+                  <div class="flex items-center gap-2">
+                    <span class="px-2 py-0.5 rounded bg-red-500/30 text-red-200 font-mono font-bold text-[11px] border border-red-500/40 flex items-center gap-1">
+                      <span>⚠️</span> {{ sandboxError.type || '執行錯誤' }}
+                    </span>
+                    <span v-if="sandboxError.line" class="font-bold text-red-400 font-mono text-xs">
+                      第 {{ sandboxError.line }} 行
+                    </span>
+                  </div>
+                  <button 
+                    type="button" 
+                    @click="sandboxError = null" 
+                    class="text-red-400/80 hover:text-red-200 text-xs px-2 py-0.5 rounded bg-red-900/40 hover:bg-red-900/70 transition flex items-center gap-1" 
+                    title="關閉錯誤提示">
+                    <span>✕</span> 關閉
+                  </button>
+                </div>
+                <div class="font-mono text-xs text-red-200/95 break-words whitespace-pre-wrap leading-relaxed pl-1">
+                  {{ sandboxError.message }}
+                </div>
+                <div v-if="sandboxError.hint" class="mt-2 pt-1.5 border-t border-red-500/25 text-[11px] text-amber-300 flex items-start gap-1.5 leading-normal">
+                  <span class="shrink-0 text-amber-400 font-bold">💡 提示：</span>
+                  <span>{{ sandboxError.hint }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- ========== 右上：輸出與狀態區 (md:col-span-6) ========== -->
+            <div class="md:col-span-6 flex flex-col min-h-0 bg-slate-900/95">
+              
+              <!-- 狀態 A: 輕量編譯模式 (全幅標準輸出 stdout，便於對答案) -->
+              <div v-if="sandboxMode === 'editor'" class="flex-1 flex flex-col min-h-0 bg-slate-950">
+                <div class="px-4 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-xs font-bold text-slate-300 shrink-0">
+                  <div class="flex items-center gap-1.5">
+                    <span>📤</span>
+                    <span>標準輸出 (stdout)</span>
+                  </div>
+                  <button 
+                    v-if="sandboxStdout"
+                    type="button" 
+                    @click="sandboxStdout = ''" 
+                    class="text-[10px] text-slate-500 hover:text-slate-300 transition">
+                    清空輸出
+                  </button>
+                </div>
+
+                <div class="flex-1 p-3 font-code text-xs overflow-auto whitespace-pre select-text space-y-0.5" ref="sandboxStdoutScrollRef">
+                  <template v-if="sandboxFormattedOutputLines.length > 0">
+                    <div 
+                      v-for="(outItem, oIdx) in sandboxFormattedOutputLines" 
+                      :key="oIdx"
+                      class="text-emerald-400/90 pl-1 leading-relaxed">
+                      {{ outItem.text || ' ' }}
+                    </div>
+                  </template>
+                  <div v-else class="text-slate-600 italic py-10 text-center">
+                    點擊右下方「⚡ 直接執行 (Run)」開始編譯運行
+                  </div>
+                </div>
+              </div>
+
+              <!-- 狀態 B: 逐行除錯模式 (上半部變數表 ＋ 下半部標準輸出) -->
+              <template v-else>
+                <!-- 上半部：變數表 (Variables) -->
+                <div class="flex-1 flex flex-col min-h-0 border-b border-slate-800">
+                  <div class="px-4 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0">
+                    <div class="flex items-center gap-1.5 text-xs font-bold text-slate-200">
+                      <span>📦</span>
+                      <span>變數表 (Variables)</span>
+                    </div>
+                    <span class="text-[10px] font-mono text-slate-500">
+                      {{ sandboxVariableList.length }} 個變數
+                    </span>
+                  </div>
+
+                  <div class="flex-1 overflow-y-auto p-3 space-y-2.5 font-mono text-xs" ref="sandboxVarScrollRef">
+                    <!-- 無變數狀態 -->
+                    <div v-if="sandboxVariableList.length === 0" class="text-center py-8 text-slate-500 text-xs">
+                      <span v-if="sandboxCurrentStepIndex === -1">按「下一步」開始觀察變數狀態</span>
+                      <span v-else>當前範疇無區域變數</span>
+                    </div>
+
+                    <!-- 變數清單 -->
+                    <div 
+                      v-for="v in sandboxVariableList" 
+                      :key="v.name"
+                      class="bg-slate-950/80 rounded-lg p-2.5 border border-slate-800 transition"
+                      :class="v.changed ? 'border-amber-500/50 var-changed-flash' : ''">
+                      
+                      <div class="flex items-center justify-between mb-1.5">
+                        <div class="flex items-center gap-1.5">
+                          <span class="font-bold text-indigo-300">{{ v.name }}</span>
+                          <span class="text-[10px] px-1 py-0.2 rounded bg-slate-800 text-slate-400">
+                            {{ v.type }}
+                          </span>
+                        </div>
+                        <span v-if="v.changed" class="text-[10px] font-sans px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30">
+                          剛更新
+                        </span>
+                      </div>
+
+                      <!-- 1. 純量純值 -->
+                      <div v-if="v.category === 'scalar'" class="text-emerald-400 font-bold truncate">
+                        {{ v.value }}
+                      </div>
+
+                      <!-- 2. 1D 一維陣列 -->
+                      <div v-else-if="v.category === '1d-array'" class="overflow-x-auto">
+                        <table class="w-full text-center border-collapse text-[11px]">
+                          <thead>
+                            <tr class="text-slate-500 border-b border-slate-800">
+                              <th v-for="(item, idx) in v.value" :key="idx" class="px-2 py-0.5 font-normal">
+                                [{{ idx }}]
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr class="font-bold">
+                              <td 
+                                v-for="(item, idx) in v.value" 
+                                :key="idx" 
+                                class="px-2 py-1 text-emerald-400 bg-slate-900/90 border border-slate-800 rounded"
+                                :class="isSandboxCellChanged(v.name, idx) ? 'border-amber-500 bg-amber-500/20 text-amber-300 var-changed-flash' : ''">
+                                {{ item }}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <!-- 3. 2D 二維矩陣陣列 -->
+                      <div v-else-if="v.category === '2d-array'" class="overflow-x-auto">
+                        <table class="text-center border-collapse text-[11px] min-w-full">
+                          <thead>
+                            <tr class="text-slate-500 border-b border-slate-800">
+                              <th class="px-1.5 py-0.5 text-slate-600 font-normal">#</th>
+                              <th v-for="(col, cIdx) in (v.value[0] || [])" :key="cIdx" class="px-2 py-0.5 font-normal">
+                                [{{ cIdx }}]
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr v-for="(row, rIdx) in v.value" :key="rIdx">
+                              <td class="text-slate-500 px-1.5 py-1 text-slate-600 font-mono">
+                                [{{ rIdx }}]
+                              </td>
+                              <td 
+                                v-for="(val, cIdx) in row" 
+                                :key="cIdx"
+                                class="px-2.5 py-1 font-bold text-emerald-400 bg-slate-900/90 border border-slate-800 rounded"
+                                :class="isSandbox2DCellChanged(v.name, rIdx, cIdx) ? 'border-amber-500 bg-amber-500/25 text-amber-300 var-changed-flash' : ''">
+                                {{ val }}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <!-- 4. 物件或其它複合型別 -->
+                      <div v-else class="text-slate-300 text-[11px] break-all">
+                        {{ v.value }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 下半部：標準輸出 stdout (除錯模式 h-28) -->
+                <div class="h-28 flex flex-col min-h-0 bg-slate-950 shrink-0">
+                  <div class="px-4 py-1.5 bg-slate-900/80 border-b border-slate-800 flex items-center justify-between text-xs font-bold text-slate-300">
+                    <div class="flex items-center gap-1.5">
+                      <span>📤</span>
+                      <span>標準輸出 (stdout)</span>
+                    </div>
+                    <button 
+                      v-if="sandboxStdout"
+                      type="button" 
+                      @click="sandboxStdout = ''" 
+                      class="text-[10px] text-slate-500 hover:text-slate-300 transition">
+                      清空
+                    </button>
+                  </div>
+                  <div class="flex-1 p-2.5 font-code text-xs overflow-auto whitespace-pre select-text space-y-0.5" ref="sandboxStdoutScrollRef">
+                    <template v-if="sandboxFormattedOutputLines.length > 0">
+                      <div 
+                        v-for="(outItem, oIdx) in sandboxFormattedOutputLines" 
+                        :key="oIdx"
+                        :class="outItem.isLatest ? 'text-amber-300 font-bold bg-amber-500/15 border-l-2 border-amber-400 pl-1.5 py-0.5 rounded-r shadow-sm' : 'text-emerald-400/85 pl-2 py-0.5'">
+                        <span v-if="outItem.isLatest" class="text-amber-400 font-mono mr-1 select-none text-[10px]">▶</span>
+                        <span>{{ outItem.text || ' ' }}</span>
+                      </div>
+                    </template>
+                    <span v-else class="text-slate-600 italic pl-1">（暫無輸出內容）</span>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- 🎛️ 觀測區 vs. 操作控制台 專屬立體分界欄 -->
+          <div class="bg-slate-900 border-t-2 border-indigo-500/40 px-5 py-2 flex flex-wrap items-center justify-between gap-2 shadow-[0_-4px_16px_rgba(0,0,0,0.4)] z-10 shrink-0">
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/40 flex items-center gap-1.5 shadow-sm text-xs">
+                <span>🎮</span> {{ sandboxMode === 'editor' ? '編譯與除錯控制台' : '單步除錯操作台' }}
+              </span>
+              <span class="text-slate-400 text-[11px] hidden sm:inline">
+                （👆 上方為程式與輸出「觀測區」｜👇 下方為測資輸入與執行「操作區」）
+              </span>
+            </div>
+            
+            <div class="flex items-center gap-3 text-xs font-mono">
+              <span v-if="sandboxMode === 'debug' && sandboxTotalSteps > 0" class="text-slate-400">
+                執行步驟: <strong class="text-indigo-400">{{ sandboxCurrentStepIndex + 1 }}</strong> / {{ sandboxTotalSteps }}
+              </span>
+              <span v-if="sandboxMode === 'debug' && sandboxCurrentStdinLine > 0" class="px-2 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 font-semibold flex items-center gap-1 text-[11px]">
+                <span>📥</span> 已讀入至測資第 {{ sandboxCurrentStdinLine }} 行
+              </span>
+              <button
+                v-if="sandboxMode === 'debug'"
+                type="button"
+                @click="returnToSandboxEditor"
+                class="px-2.5 py-0.5 rounded bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/40 font-bold text-xs transition flex items-center gap-1">
+                <span>✏️</span> 返回編輯
+              </button>
+            </div>
+          </div>
+
+          <!-- 下半部 (操作區 6/12 + 6/12)：左下輸入資料 stdin ＋ 右下控制按鈕群 (等高 154px) -->
+          <div class="px-5 py-3.5 bg-slate-900 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-12 gap-4 items-center shrink-0">
+            
+            <!-- ========== 左下：標準輸入 stdin (永遠固定在左下角，位置不跳動) ========== -->
+            <div class="md:col-span-6 flex flex-col gap-1.5 min-w-0 pr-0 md:pr-3">
+              <div class="flex items-center justify-between text-xs font-mono text-slate-400">
+                <span class="flex items-center gap-1">
+                  <span>📥</span> 輸入資料 (stdin):
+                  <span v-if="sandboxParsedStdinLines.length > 0" class="text-[11px] text-slate-500">
+                    (共 {{ sandboxParsedStdinLines.length }} 行)
+                  </span>
+                </span>
+
+                <!-- 除錯模式下切換串流 vs. 原始文字 -->
+                <div v-if="sandboxMode === 'debug' && sandboxCurrentStepIndex >= 0 && sandboxParsedStdinLines.length > 0" class="flex items-center gap-2 text-[11px]">
+                  <span class="text-cyan-400 font-bold flex items-center gap-1" v-if="sandboxCurrentStdinLine > 0">
+                    ▶ 當前讀取第 {{ sandboxCurrentStdinLine }} 行
+                  </span>
+                  <button 
+                    type="button" 
+                    @click="sandboxShowRawStdin = !sandboxShowRawStdin"
+                    class="text-indigo-400 hover:text-indigo-300 underline transition">
+                    {{ sandboxShowRawStdin ? '切換為串流追蹤' : '檢視原始文字' }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- 狀態 A: 編輯模式 或 檢視原始文字時的 textarea -->
+              <textarea
+                v-if="sandboxMode === 'editor' || sandboxCurrentStepIndex === -1 || sandboxShowRawStdin || sandboxParsedStdinLines.length === 0"
+                v-model="sandboxStdin"
+                @input="saveSandboxStdin"
+                rows="7"
+                placeholder="支援多行輸入 (例如：cin / input() 的測試資料)..."
+                class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white font-mono focus:outline-none focus:border-indigo-500 placeholder-slate-600 resize-y leading-relaxed"
+                :disabled="sandboxMode === 'debug' && sandboxCurrentStepIndex > -1">
+              </textarea>
+
+              <!-- 狀態 B: 除錯模式追蹤串流行 -->
+              <div 
+                v-else 
+                ref="sandboxStdinScrollRef"
+                class="w-full h-[154px] overflow-y-auto bg-slate-950 border border-slate-700/80 rounded-xl p-2 font-mono text-xs space-y-1 select-none">
+                <div 
+                  v-for="(sLine, sIdx) in sandboxParsedStdinLines" 
+                  :key="sIdx"
+                  :class="[
+                    'flex items-center px-2 py-1 rounded transition-all duration-150',
+                    sandboxCurrentStdinLine === (sIdx + 1) ? 'stdin-line-active bg-cyan-950/80 border border-cyan-500/60 text-cyan-200 font-bold shadow-sm' : 
+                    sandboxCurrentStdinLine > (sIdx + 1) ? 'text-slate-500 bg-slate-900/40 line-through opacity-75' : 'text-slate-300 hover:bg-slate-900/60'
+                  ]">
+                  <span class="w-14 shrink-0 font-mono text-[11px]" :class="sandboxCurrentStdinLine === (sIdx + 1) ? 'text-cyan-400 font-bold' : 'text-slate-500'">
+                    第 {{ sIdx + 1 }} 行
+                  </span>
+                  <span v-if="sandboxCurrentStdinLine === (sIdx + 1)" class="text-cyan-400 font-bold mr-2 text-[11px] animate-pulse">
+                    ▶ 剛讀入
+                  </span>
+                  <span v-else-if="sandboxCurrentStdinLine > (sIdx + 1)" class="text-emerald-500/80 mr-2 text-[11px]">
+                    ✓ 已讀入
+                  </span>
+                  <span v-else class="text-slate-600 mr-2 text-[11px]">
+                    待讀入
+                  </span>
+                  <span class="font-code text-xs truncate">{{ sLine !== '' ? sLine : '(空白行)' }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- ========== 右下：控制按鈕群 (等高 154px，與左側精準對齊) ========== -->
+            <div class="md:col-span-6 flex flex-col gap-1.5 min-w-0 pl-0 md:pl-3">
+              <div class="flex items-center justify-between text-xs font-mono text-slate-400">
+                <span class="flex items-center gap-1">
+                  <span>🕹️</span> {{ sandboxMode === 'editor' ? '執行動作(Actions):' : '步進控制(Controls):' }}
+                </span>
+                <span class="text-[11px] text-slate-500">
+                  <template v-if="sandboxMode === 'editor'">
+                    {{ sandboxExecuting ? '⏳ 執行中...' : '準備就緒' }}
+                  </template>
+                  <template v-else>
+                    {{ sandboxExecFinished ? '✓ 已執行結束' : '逐步追蹤中' }}
+                  </template>
+                </span>
+              </div>
+
+              <!-- 按鈕組合 A: 輕量編譯模式 (⚡ 直接執行 ＋ 🔍 進入逐行除錯) -->
+              <div v-if="sandboxMode === 'editor'" class="grid grid-cols-2 gap-2.5 sm:gap-3 w-full h-[154px]">
+                <!-- ⚡ 直接執行按鈕 (Run) -->
+                <button
+                  type="button"
+                  @click="runSandboxDirect"
+                  :disabled="sandboxExecuting"
+                  class="h-full rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xl shadow-emerald-600/35 border border-emerald-400/40 ring-2 ring-emerald-500/20 disabled:opacity-30 disabled:pointer-events-none flex flex-col items-center justify-center gap-2 px-3 active:scale-95 group select-none">
+                  <span class="text-3xl sm:text-4xl leading-none transition-transform group-hover:scale-110">⚡</span>
+                  <span class="text-xs sm:text-sm font-black tracking-wide">直接執行 (Run)</span>
+                  <span class="text-[10px] text-emerald-200/80 font-normal">秒速於右上角看輸出</span>
+                </button>
+
+                <!-- 🔍 進入逐行除錯按鈕 -->
+                <button
+                  type="button"
+                  @click="startSandboxDebug"
+                  :disabled="sandboxExecuting"
+                  class="h-full rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-xl shadow-indigo-600/35 border border-indigo-400/40 ring-2 ring-indigo-500/20 disabled:opacity-30 disabled:pointer-events-none flex flex-col items-center justify-center gap-2 px-3 active:scale-95 group select-none">
+                  <span class="text-3xl sm:text-4xl leading-none transition-transform group-hover:scale-110">🔍</span>
+                  <span class="text-xs sm:text-sm font-black tracking-wide">進入逐行除錯</span>
+                  <span class="text-[10px] text-indigo-200/80 font-normal">觀察變數與記憶體變化</span>
+                </button>
+              </div>
+
+              <!-- 按鈕組合 B: 逐行除錯模式 (2×2 勻稱步進控制鍵) -->
+              <div v-else class="grid grid-cols-2 gap-2.5 sm:gap-3 w-full h-[154px]">
+                <!-- 1. 🔁 重新開始 (左上) -->
+                <button
+                  type="button"
+                  @click="resetSandboxExecution"
+                  :disabled="sandboxExecuting || sandboxCurrentStepIndex === -1"
+                  class="h-full rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition border border-slate-700/80 disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center gap-2.5 sm:gap-3 px-3 active:scale-95 shadow-md group select-none"
+                  title="回到第 1 列重新開始">
+                  <span class="text-2xl sm:text-3xl leading-none transition-transform group-hover:rotate-[-45deg]">🔁</span>
+                  <span class="text-xs sm:text-sm font-bold tracking-tight">重新開始</span>
+                </button>
+
+                <!-- 2. ◀ 上一步 (右上) -->
+                <button
+                  type="button"
+                  @click="stepBackwardSandbox"
+                  :disabled="sandboxExecuting || sandboxCurrentStepIndex <= 0"
+                  class="h-full rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition border border-slate-700/80 disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center gap-2.5 sm:gap-3 px-3 active:scale-95 shadow-md group select-none"
+                  title="回到上一步">
+                  <span class="text-2xl sm:text-3xl leading-none transition-transform group-hover:-translate-x-1">◀</span>
+                  <span class="text-xs sm:text-sm font-bold tracking-tight">上一步</span>
+                </button>
+
+                <!-- 3. ▶ 下一步 (左下：核心操作鍵) -->
+                <button
+                  type="button"
+                  @click="stepForwardSandbox"
+                  :disabled="sandboxExecuting || sandboxExecFinished"
+                  class="h-full rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-xl shadow-indigo-600/35 border border-indigo-400/40 ring-2 ring-indigo-500/20 disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center gap-2.5 sm:gap-3 px-3 active:scale-95 group select-none"
+                  title="執行下一步">
+                  <span class="text-2xl sm:text-3xl leading-none transition-transform group-hover:translate-x-1">▶</span>
+                  <span class="text-xs sm:text-sm font-black tracking-wide">下一步</span>
+                </button>
+
+                <!-- 4. ⏩ 執行到底 (右下) -->
+                <button
+                  type="button"
+                  @click="runToBottomSandbox"
+                  :disabled="sandboxExecuting || sandboxExecFinished"
+                  class="h-full rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xl shadow-emerald-600/35 border border-emerald-400/40 ring-2 ring-emerald-500/20 disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center gap-2.5 sm:gap-3 px-3 active:scale-95 group select-none"
+                  title="直接執行至結束">
+                  <span class="text-2xl sm:text-3xl leading-none transition-transform group-hover:translate-x-1">⏩</span>
+                  <span class="text-xs sm:text-sm font-bold tracking-tight">執行到底</span>
+                </button>
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
       </div>
     </div>
 
