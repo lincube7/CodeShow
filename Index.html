@@ -1551,13 +1551,13 @@
 
           <!-- 右側工具快捷鍵：魔術棒美化、檔案匯出、換行開關、關閉 -->
           <div class="flex items-center space-x-2 shrink-0">
-            <!-- 🪄 魔術棒按鈕 (僅在編輯模式可用) -->
+            <!-- 🪄 魔術棒按鈕 (僅在 C++ 編輯模式可用) -->
             <button
-              v-if="sandboxMode === 'editor'"
+              v-show="sandboxMode === 'editor' && sandboxLang === 'cpp'"
               type="button"
               @click="autoFormatSandboxCode"
               class="h-8 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 transition border border-slate-700 text-xs flex items-center gap-1.5 active:scale-95 shadow-sm"
-              :title="sandboxLang === 'cpp' ? '自動調整縮排與排版美化 (C++ 嚴格 1TBS 規範)' : '自動調整縮排與排版美化 (Python PEP 8 規範)'">
+              title="自動調整縮排與排版美化 (C++ 嚴格 1TBS 規範)">
               <span class="text-sm">🪄</span>
               <span class="hidden sm:inline">美化排版</span>
             </button>
@@ -1629,6 +1629,13 @@
                     共 {{ sandboxLineCount }} 行
                   </span>
                 </div>
+              </div>
+
+              <!-- C++ JSCPP 標頭檔支援提示條 (僅 C++ 且編輯模式時顯示) -->
+              <div
+                v-show="sandboxLang === 'cpp' && sandboxMode === 'editor'"
+                class="px-3 py-1 bg-amber-950/40 border-b border-amber-800/40 text-[11px] text-amber-300/90 shrink-0 font-sans">
+                {{ sandboxCppNotice }}
               </div>
 
               <!-- 程式碼呈現區 -->
@@ -3448,6 +3455,9 @@ int main() {
 }
 `;
 
+        // C++ 標頭檔支援提示訊息 (透過 Vue 資料渲染，避免在 HTML 模板中出現角括號導致解析中斷)
+        const sandboxCppNotice = '⚠️ 支援標頭檔：<iostream>、<cmath>、<cstring>、<cstdlib>（不支援 <vector>、<string> 等 STL 容器，請改用原生陣列）';
+
         // 雙語言獨立草稿快取 (localStorage)
         let savedPy = '';
         let savedCpp = '';
@@ -4628,6 +4638,7 @@ def __run_with_trace(user_code_str, stdin_str):
           showSandboxModal,
           sandboxMode,
           sandboxLang,
+          sandboxCppNotice,
           sandboxWrapEnabled,
           sandboxExecuting,
           sandboxError,
