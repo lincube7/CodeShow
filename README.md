@@ -169,9 +169,11 @@ flowchart TD
 | 檔案名稱 | 角色 | 說明 |
 |---|---|---|
 | [`Code.gs`](file:///Users/lincube/Documents/show_code/Code.gs) | 後端控制層 (GAS) | 負責入口 `doGet()`、身分鑑權、快取、Sheets 欄位擴充 (含 Language 與 SourceCode)、圖片生命週期管理。 |
-| [`Index.html`](file:///Users/lincube/Documents/show_code/Index.html) | 前端表現層 (SPA) | 內含 HTML、Vue 3、Prism.js、Pyodide/JSCPP 雙語言逐步執行器、變數表矩陣渲染器、anti-OCR 圖片檢視器。 |
-| [`Code.gs.v1_image_only`](file:///Users/lincube/Documents/show_code/Code.gs.v1_image_only) | 歷史版本存檔 | 原始純圖片展示與管理後端（無原始碼欄位儲存）。 |
-| [`Index.html.v1_image_only`](file:///Users/lincube/Documents/show_code/Index.html.v1_image_only) | 歷史版本存檔 | 原始純圖片防複製預覽與 Carbon 轉圖前端。 |
+| [`Index.html`](file:///Users/lincube/Documents/show_code/Index.html) | 前端表現層 (SPA) | 內含 HTML、Vue 3、Prism.js、Pyodide/JSCPP 雙語言逐步執行器、變數表矩陣渲染器、anti-OCR 圖片檢視器、自由練習沙盒雙模系統。 |
+| [`Code.gs.v2_debug`](file:///Users/lincube/Documents/show_code/Code.gs.v2_debug) | 歷史版本存檔 (v2.0) | 第二版題庫逐行除錯後端存檔。 |
+| [`Index.html.v2_debug`](file:///Users/lincube/Documents/show_code/Index.html.v2_debug) | 歷史版本存檔 (v2.0) | 第二版題庫逐行除錯前端存檔。 |
+| [`Code.gs.v1_image_only`](file:///Users/lincube/Documents/show_code/Code.gs.v1_image_only) | 歷史版本存檔 (v1.0) | 原始純圖片展示與管理後端（無原始碼欄位儲存）。 |
+| [`Index.html.v1_image_only`](file:///Users/lincube/Documents/show_code/Index.html.v1_image_only) | 歷史版本存檔 (v1.0) | 原始純圖片防複製預覽與 Carbon 轉圖前端。 |
 | [`README.md`](file:///Users/lincube/Documents/show_code/README.md) | 說明文檔 | 系統架構、逐步除錯器技術細節、防 OCR 策略、部署指南。 |
 
 ---
@@ -213,12 +215,10 @@ Google Apps Script 的網頁應用程式在修改程式碼後，**單純按儲�
 
 ---
 
-## 📌 待辦事項與未來功能規劃 (Roadmap & Feature Planning)
-
-### 🧪 自由練習沙盒 ＆ 線上輕量編譯/逐行除錯雙模系統
+### 6. 🧪 自由練習沙盒 ＆ 線上輕量編譯/逐行除錯雙模系統 (v3.0)
 
 #### 1. 功能願景與教學價值
-現行系統的逐行可視化除錯器專注於展示老師建立的題庫範例。為了延伸課堂學習成效，預計於首頁新增獨立的**「自由練習沙盒 / 線上除錯器」**入口，讓學生不僅能看範例，還能隨時貼上自己的隨堂練習、作業或測試程式碼，直接在瀏覽器進行免安裝環境的**「⚡ 線上編譯執行」**與**「🔍 視覺化逐行除錯」**。
+現行系統的逐行可視化除錯器專注於展示老師建立的題庫範例。為了延伸課堂學習成效，系統於首頁頂部動作列配置了**「🧪 自由練習沙盒」**入口，讓學生不僅能看範例，還能隨時貼上自己的隨堂練習、作業或測試程式碼，直接在瀏覽器進行免安裝環境的**「⚡ 線上編譯執行 (Direct Run)」**與**「🔍 視覺化逐行除錯 (Step Debugger)」**。
 
 #### 2. 單一模組共用核心 (Single Source of Truth)
 * **底層直譯引擎 100% 共用**：沙盒與題庫完全共用純前端 WebAssembly 沙盒（Python 的 Pyodide 追蹤器與 C++ 的 JSCPP AST 執行器），零伺服器運算負載。
