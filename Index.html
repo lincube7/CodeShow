@@ -2908,6 +2908,8 @@ print("Result:", calculate_sum(10))`
 
             if (/expected\s*['"]?;/i.test(cleanMsg)) {
               hint = "缺少分號 ';'，請檢查該行或前一行結尾是否有遺漏分號。";
+            } else if (/cannot find library/i.test(cleanMsg)) {
+              hint = "輕量瀏覽器沙盒不支援此標頭檔 (如 <string>, <vector> 等 STL 容器)。請使用原生陣列 (如 int a[10]、char s[]) 與 <iostream> 進行練習。";
             } else if (/not declared in this scope/i.test(cleanMsg)) {
               hint = "變數尚未宣告，使用前請先宣告其型別（例如 int, float, string 等）。";
             } else if (/expected\s*['"]?[}{]/i.test(cleanMsg) || /unmatched/i.test(cleanMsg)) {
@@ -3232,7 +3234,7 @@ def __run_with_trace(user_code_str, stdin_str):
     try:
         compiled = compile(user_code_str, "<user_code>", "exec")
         sys.settrace(recorder.trace_callback)
-        exec(compiled, {})
+        exec(compiled, {"__name__": "__main__"})
     finally:
         sys.settrace(None)
         # 捕捉最後一次輸出的完成態
@@ -3432,16 +3434,19 @@ if __name__ == "__main__":
         const DEFAULT_CPP_SANDBOX_CODE = `// 自由練習沙盒 - C++ 模式
 // 您可以在此隨堂練習、修改程式碼並測試輸出
 #include <iostream>
-#include <string>
-#include <vector>
 
 using namespace std;
 
 int main() {
-    vector<string> items = {"C++", "CodeShow", "JSCPP"};
-    for (size_t i = 0; i < items.size(); ++i) {
-        cout << "[" << (i + 1) << "] Hello, " << items[i] << "!" << endl;
+    int scores[5] = {85, 92, 78, 95, 88};
+    int total = 0;
+    
+    for (int i = 0; i < 5; ++i) {
+        cout << "第 " << (i + 1) << " 筆成績: " << scores[i] << endl;
+        total += scores[i];
     }
+    
+    cout << "總分: " << total << ", 平均: " << (total / 5.0) << endl;
     return 0;
 }
 `;
@@ -3455,6 +3460,12 @@ int main() {
           savedCpp = localStorage.getItem('codeshow_sandbox_cpp');
           savedStdin = localStorage.getItem('codeshow_sandbox_stdin');
         } catch (_) {}
+
+        // 自動升級修復舊版含有 unsupported STL (<vector> / <string>) 的本機草稿
+        if (!savedCpp || savedCpp.includes('<vector>') || savedCpp.includes('<string>')) {
+          savedCpp = DEFAULT_CPP_SANDBOX_CODE;
+          try { localStorage.setItem('codeshow_sandbox_cpp', DEFAULT_CPP_SANDBOX_CODE); } catch(_) {}
+        }
 
         const sandboxCodePy = ref(savedPy || DEFAULT_PYTHON_SANDBOX_CODE);
         const sandboxCodeCpp = ref(savedCpp || DEFAULT_CPP_SANDBOX_CODE);
@@ -3527,6 +3538,10 @@ int main() {
         // 開關沙盒彈窗
         const openSandboxModal = () => {
           showSandboxModal.value = true;
+          if (sandboxCodeCpp.value && (sandboxCodeCpp.value.includes('<vector>') || sandboxCodeCpp.value.includes('<string>'))) {
+            sandboxCodeCpp.value = DEFAULT_CPP_SANDBOX_CODE;
+            try { localStorage.setItem('codeshow_sandbox_cpp', DEFAULT_CPP_SANDBOX_CODE); } catch(_) {}
+          }
           if (sandboxLang.value === 'cpp') {
             sandboxCode.value = sandboxCodeCpp.value;
           } else {
@@ -3736,7 +3751,7 @@ sys.stdin = __sb_stdin
 
 try:
     __compiled = compile(__sb_code_str, "<user_code>", "exec")
-    exec(__compiled, {})
+    exec(__compiled, {"__name__": "__main__"})
 finally:
     sys.stdout = __old_stdout
     sys.stdin = __old_stdin
@@ -3950,7 +3965,7 @@ def __run_with_trace(user_code_str, stdin_str):
     try:
         compiled = compile(user_code_str, "<user_code>", "exec")
         sys.settrace(recorder.trace_callback)
-        exec(compiled, {})
+        exec(compiled, {"__name__": "__main__"})
     finally:
         sys.settrace(None)
         if recorder.steps:
