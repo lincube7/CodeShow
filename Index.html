@@ -3431,10 +3431,7 @@ if __name__ == "__main__":
     main()
 `;
 
-        const DEFAULT_CPP_SANDBOX_CODE = `// 自由練習沙盒 - C++ 模式
-// 您可以在此隨堂練習、修改程式碼並測試輸出
-#include <iostream>
-
+        const DEFAULT_CPP_SANDBOX_CODE = `#include <iostream>
 using namespace std;
 
 int main() {
@@ -3461,8 +3458,8 @@ int main() {
           savedStdin = localStorage.getItem('codeshow_sandbox_stdin');
         } catch (_) {}
 
-        // 自動升級修復舊版含有 unsupported STL (<vector> / <string>) 的本機草稿
-        if (!savedCpp || savedCpp.includes('<vector>') || savedCpp.includes('<string>')) {
+        // 自動升級修復舊版含有 unsupported STL (<vector> / <string>) 或多餘換行的本機草稿
+        if (!savedCpp || savedCpp.includes('<vector>') || savedCpp.includes('<string>') || savedCpp.includes('// 自由練習沙盒 - C++') || savedCpp.startsWith('\n') || savedCpp.includes('#include <iostream>\n\nusing namespace std;')) {
           savedCpp = DEFAULT_CPP_SANDBOX_CODE;
           try { localStorage.setItem('codeshow_sandbox_cpp', DEFAULT_CPP_SANDBOX_CODE); } catch(_) {}
         }
@@ -3538,7 +3535,12 @@ int main() {
         // 開關沙盒彈窗
         const openSandboxModal = () => {
           showSandboxModal.value = true;
-          if (sandboxCodeCpp.value && (sandboxCodeCpp.value.includes('<vector>') || sandboxCodeCpp.value.includes('<string>'))) {
+          if (sandboxCodeCpp.value && (
+            sandboxCodeCpp.value.includes('<vector>') ||
+            sandboxCodeCpp.value.includes('<string>') ||
+            sandboxCodeCpp.value.includes('// 自由練習沙盒 - C++') ||
+            sandboxCodeCpp.value.includes('#include <iostream>\n\nusing namespace std;')
+          )) {
             sandboxCodeCpp.value = DEFAULT_CPP_SANDBOX_CODE;
             try { localStorage.setItem('codeshow_sandbox_cpp', DEFAULT_CPP_SANDBOX_CODE); } catch(_) {}
           }
