@@ -3407,6 +3407,704 @@ def __run_with_trace(user_code_str, stdin_str):
           if (!curr || !prev || !curr[r] || !prev[r]) return false;
           return curr[r][c] !== prev[r][c];
         };
+
+        // ==================== 自由練習沙盒 ＆ 線上輕量編譯/逐行除錯雙模系統 ====================
+        const showSandboxModal = ref(false);
+        const sandboxMode = ref('editor'); // 'editor' (輕量編譯) | 'debug' (逐行除錯)
+        const sandboxLang = ref('python'); // 'python' | 'cpp'
+        const sandboxWrapEnabled = ref(true);
+        const sandboxExecuting = ref(false);
+        const sandboxError = ref(null);
+        const sandboxStdout = ref('');
+
+        const DEFAULT_PYTHON_SANDBOX_CODE = `# 自由練習沙盒 - Python 模式
+# 您可以在此隨堂練習、修改程式碼並測試輸出
+
+def main():
+    items = ["Python", "CodeShow", "WASM"]
+    for i, item in enumerate(items, 1):
+        print(f"[{i}] Hello, {item}!")
+
+if __name__ == "__main__":
+    main()
+`;
+
+        const DEFAULT_CPP_SANDBOX_CODE = `// 自由練習沙盒 - C++ 模式
+// 您可以在此隨堂練習、修改程式碼並測試輸出
+#include <iostream>
+#include <string>
+#include <vector>
+
+using namespace std;
+
+int main() {
+    vector<string> items = {"C++", "CodeShow", "JSCPP"};
+    for (size_t i = 0; i < items.size(); ++i) {
+        cout << "[" << (i + 1) << "] Hello, " << items[i] << "!" << endl;
+    }
+    return 0;
+}
+`;
+
+        // 雙語言獨立草稿快取 (localStorage)
+        let savedPy = '';
+        let savedCpp = '';
+        let savedStdin = '';
+        try {
+          savedPy = localStorage.getItem('codeshow_sandbox_py');
+          savedCpp = localStorage.getItem('codeshow_sandbox_cpp');
+          savedStdin = localStorage.getItem('codeshow_sandbox_stdin');
+        } catch (_) {}
+
+        const sandboxCodePy = ref(savedPy || DEFAULT_PYTHON_SANDBOX_CODE);
+        const sandboxCodeCpp = ref(savedCpp || DEFAULT_CPP_SANDBOX_CODE);
+        const sandboxCode = ref(sandboxCodePy.value);
+        const sandboxStdin = ref(savedStdin || '');
+
+        // 除錯模式相關狀態
+        const sandboxRecordedSteps = ref([]);
+        const sandboxCurrentStepIndex = ref(-1);
+        const sandboxCurrentExecutingLine = ref(null);
+        const sandboxVariableList = ref([]);
+        const sandboxExecFinished = ref(false);
+        const sandboxCurrentStdinLine = ref(0);
+        const sandboxShowRawStdin = ref(false);
+
+        // DOM 元素引用
+        const sandboxEditorRef = ref(null);
+        const sandboxLineGutterRef = ref(null);
+        const sandboxCodeScrollRef = ref(null);
+        const sandboxVarScrollRef = ref(null);
+        const sandboxStdinScrollRef = ref(null);
+        const sandboxStdoutScrollRef = ref(null);
+
+        // 程式碼總行數 (用於編輯器行號 Gutter)
+        const sandboxLineCount = computed(() => {
+          const c = sandboxCode.value || '';
+          return Math.max(1, c.split('\n').length);
+        });
+
+        // 逐行除錯模式的行資料
+        const sandboxParsedCodeLines = computed(() => {
+          const c = sandboxCode.value || '';
+          return c.split('\n').map((line, idx) => ({
+            lineIndex: idx + 1,
+            rawText: line
+          }));
+        });
+
+        // 測資行數
+        const sandboxParsedStdinLines = computed(() => {
+          const raw = sandboxStdin.value || '';
+          if (!raw.trim()) return [];
+          return raw.split(/\r?\n/);
+        });
+
+        // 沙盒總步驟數
+        const sandboxTotalSteps = computed(() => sandboxRecordedSteps.value.length);
+
+        // 格式化沙盒標準輸出 (最新一行琥珀金高亮)
+        const sandboxFormattedOutputLines = computed(() => {
+          const val = sandboxStdout.value;
+          if (!val) return [];
+          const lines = val.split('\n');
+          let targetIndex = -1;
+          for (let i = lines.length - 1; i >= 0; i--) {
+            if (lines[i].length > 0) {
+              targetIndex = i;
+              break;
+            }
+          }
+          if (targetIndex === -1 && lines.length > 0) {
+            targetIndex = Math.max(0, lines.length - 2);
+          }
+          return lines.map((line, idx) => ({
+            text: line,
+            isLatest: idx === targetIndex && line.length > 0
+          }));
+        });
+
+        // 開關沙盒彈窗
+        const openSandboxModal = () => {
+          showSandboxModal.value = true;
+          if (sandboxLang.value === 'cpp') {
+            sandboxCode.value = sandboxCodeCpp.value;
+          } else {
+            sandboxCode.value = sandboxCodePy.value;
+          }
+        };
+
+        const closeSandboxModal = () => {
+          showSandboxModal.value = false;
+        };
+
+        // 切換語言 (雙語言獨立草稿自動保存與切換)
+        const switchSandboxLang = (lang) => {
+          if (sandboxMode.value === 'debug') return;
+          if (sandboxLang.value === 'python') {
+            sandboxCodePy.value = sandboxCode.value;
+            try { localStorage.setItem('codeshow_sandbox_py', sandboxCode.value); } catch(_) {}
+          } else {
+            sandboxCodeCpp.value = sandboxCode.value;
+            try { localStorage.setItem('codeshow_sandbox_cpp', sandboxCode.value); } catch(_) {}
+          }
+
+          sandboxLang.value = lang;
+          sandboxCode.value = (lang === 'cpp') ? sandboxCodeCpp.value : sandboxCodePy.value;
+          sandboxStdout.value = '';
+          sandboxError.value = null;
+        };
+
+        // 程式碼編輯自動暫存
+        const onSandboxCodeInput = () => {
+          try {
+            if (sandboxLang.value === 'python') {
+              sandboxCodePy.value = sandboxCode.value;
+              localStorage.setItem('codeshow_sandbox_py', sandboxCode.value);
+            } else {
+              sandboxCodeCpp.value = sandboxCode.value;
+              localStorage.setItem('codeshow_sandbox_cpp', sandboxCode.value);
+            }
+          } catch (_) {}
+        };
+
+        // 測資輸入自動暫存
+        const saveSandboxStdin = () => {
+          try {
+            localStorage.setItem('codeshow_sandbox_stdin', sandboxStdin.value);
+          } catch (_) {}
+        };
+
+        // 編輯器 Tab 鍵插入 4 格空格
+        const handleSandboxTab = (e) => {
+          const textarea = e.target;
+          if (!textarea) return;
+          const start = textarea.selectionStart;
+          const end = textarea.selectionEnd;
+          const val = textarea.value;
+          textarea.value = val.substring(0, start) + '    ' + val.substring(end);
+          textarea.selectionStart = textarea.selectionEnd = start + 4;
+          sandboxCode.value = textarea.value;
+          onSandboxCodeInput();
+        };
+
+        // 行號槽與 textarea 垂直捲動聯動
+        const syncSandboxEditorScroll = (e) => {
+          if (sandboxLineGutterRef.value && e && e.target) {
+            sandboxLineGutterRef.value.scrollTop = e.target.scrollTop;
+          }
+        };
+
+        // 🪄 魔術棒程式碼自動排版美化 (Python PEP 8 / C++ 1TBS)
+        const autoFormatSandboxCode = () => {
+          const raw = sandboxCode.value || '';
+          if (!raw.trim()) return;
+
+          if (sandboxLang.value === 'cpp') {
+            // C++: 嚴格 1TBS / OTBS 規範
+            let text = raw.replace(/\r\n/g, '\n').replace(/\t/g, '    ');
+            text = text.replace(/([^\s{;])\s*\n\s*\{/g, '$1 {');
+            text = text.replace(/\}\s*\n\s*else\b/g, '} else');
+            text = text.replace(/\}\s*\n\s*catch\b/g, '} catch');
+
+            const lines = text.split('\n');
+            let indentLevel = 0;
+            const indentStr = '    ';
+            const result = [];
+
+            for (let i = 0; i < lines.length; i++) {
+              let line = lines[i].trim();
+              if (line.length === 0) {
+                result.push('');
+                continue;
+              }
+
+              let openCount = 0;
+              let closeCount = 0;
+              let inString = false;
+              let stringChar = '';
+
+              for (let c = 0; c < line.length; c++) {
+                const ch = line[c];
+                if ((ch === '"' || ch === "'") && (c === 0 || line[c - 1] !== '\\')) {
+                  if (!inString) { inString = true; stringChar = ch; }
+                  else if (stringChar === ch) { inString = false; }
+                }
+                if (!inString) {
+                  if (ch === '{') openCount++;
+                  else if (ch === '}') closeCount++;
+                }
+              }
+
+              if (line.startsWith('}')) {
+                indentLevel = Math.max(0, indentLevel - 1);
+                result.push(indentStr.repeat(indentLevel) + line);
+                indentLevel += (openCount - (closeCount - 1));
+                indentLevel = Math.max(0, indentLevel);
+              } else {
+                result.push(indentStr.repeat(indentLevel) + line);
+                indentLevel += (openCount - closeCount);
+                indentLevel = Math.max(0, indentLevel);
+              }
+            }
+            sandboxCode.value = result.join('\n');
+          } else {
+            // Python: PEP 8 規範 (Tab轉4空格，清理行尾多餘空白)
+            const lines = raw.replace(/\r\n/g, '\n').split('\n');
+            const result = lines.map(l => {
+              let s = l.replace(/\t/g, '    ');
+              return s.trimEnd();
+            });
+            sandboxCode.value = result.join('\n');
+          }
+
+          onSandboxCodeInput();
+          showToast("✨ 程式碼排版美化完成！");
+        };
+
+        // 📥 下載匯出程式碼檔案
+        const exportSandboxCode = () => {
+          const code = sandboxCode.value || '';
+          const ext = sandboxLang.value === 'cpp' ? 'cpp' : 'py';
+          const filename = `sandbox.${ext}`;
+          const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          showToast(`已成功下載 ${filename}！`);
+        };
+
+        // ✏️ 返回編輯模式
+        const returnToSandboxEditor = () => {
+          sandboxMode.value = 'editor';
+          sandboxError.value = null;
+        };
+
+        // ⚡ 直接執行 (Run) 模式：秒速跑完於右上角顯示輸出，代碼保持可編輯
+        const runSandboxDirect = async () => {
+          sandboxExecuting.value = true;
+          sandboxError.value = null;
+          sandboxStdout.value = '';
+          const lang = sandboxLang.value;
+          const code = sandboxCode.value || '';
+          const inputData = sandboxStdin.value || '';
+
+          try {
+            if (lang === 'cpp') {
+              await ensureJSCPPLoaded();
+              let stdoutBuf = '';
+              let processedCode = code;
+              if (/\bint\s+main\s*\([^)]*\)/.test(processedCode) && !/\breturn\b/.test(processedCode)) {
+                const lastBrace = processedCode.lastIndexOf('}');
+                if (lastBrace !== -1) {
+                  processedCode = processedCode.substring(0, lastBrace) + '\n    return 0;\n' + processedCode.substring(lastBrace);
+                } else {
+                  processedCode += '\nreturn 0;';
+                }
+              }
+
+              const config = {
+                stdio: {
+                  write: (s) => { stdoutBuf += s; }
+                },
+                maxTimeout: 10000
+              };
+
+              try {
+                window.JSCPP.run(processedCode, inputData, config);
+                sandboxStdout.value = stdoutBuf || '(程式執行結束，無標準輸出)';
+              } catch (runErr) {
+                throw runErr;
+              }
+            } else {
+              // Python (Pyodide)
+              const py = await ensurePyodideLoaded();
+              const directScript = `
+import sys, io
+
+__sb_stdout = io.StringIO()
+__sb_stdin = io.StringIO(__sb_input_str)
+__old_stdout = sys.stdout
+__old_stdin = sys.stdin
+sys.stdout = __sb_stdout
+sys.stdin = __sb_stdin
+
+try:
+    __compiled = compile(__sb_code_str, "<user_code>", "exec")
+    exec(__compiled, {})
+finally:
+    sys.stdout = __old_stdout
+    sys.stdin = __old_stdin
+
+__sb_result = __sb_stdout.getvalue()
+`;
+              py.globals.set("__sb_code_str", code);
+              py.globals.set("__sb_input_str", inputData);
+              await py.runPythonAsync(directScript);
+              const out = py.globals.get("__sb_result");
+              sandboxStdout.value = out || '(程式執行結束，無標準輸出)';
+            }
+          } catch (err) {
+            console.error("沙盒執行失敗:", err);
+            sandboxError.value = parseExecutionError(err, lang);
+          } finally {
+            sandboxExecuting.value = false;
+          }
+        };
+
+        // 🔍 進入逐行除錯 (Step Debugger) 模式
+        const startSandboxDebug = async () => {
+          sandboxExecuting.value = true;
+          sandboxError.value = null;
+          const lang = sandboxLang.value;
+          const code = sandboxCode.value || '';
+          const inputData = sandboxStdin.value || '';
+
+          try {
+            if (lang === 'cpp') {
+              await ensureJSCPPLoaded();
+              const steps = [];
+              let stdoutBuffer = "";
+
+              let processedCode = code;
+              if (/\bint\s+main\s*\([^)]*\)/.test(processedCode) && !/\breturn\b/.test(processedCode)) {
+                const lastBrace = processedCode.lastIndexOf('}');
+                if (lastBrace !== -1) {
+                  processedCode = processedCode.substring(0, lastBrace) + '\n    return 0;\n' + processedCode.substring(lastBrace);
+                } else {
+                  processedCode += '\nreturn 0;';
+                }
+              }
+
+              const config = {
+                stdio: {
+                  write: (s) => { stdoutBuffer += s; }
+                },
+                debug: true
+              };
+
+              let myDebugger;
+              try {
+                myDebugger = window.JSCPP.run(processedCode, inputData, config);
+              } catch (syntaxErr) {
+                throw new Error("語法錯誤 (Syntax Error): " + syntaxErr.message);
+              }
+
+              let stepCount = 0;
+              const maxSteps = 1500;
+              let lastLine = null;
+              let cppStdinLinesRead = 0;
+              const cppInputLinesCount = inputData.trim() ? inputData.split(/\r?\n/).length : 0;
+              const cppCodeLines = processedCode.split('\n');
+
+              while (myDebugger && stepCount < maxSteps) {
+                let currentLine = null;
+                const nextNode = myDebugger.nextNode ? myDebugger.nextNode() : null;
+                if (nextNode && nextNode.sLine !== undefined) {
+                  currentLine = nextNode.sLine;
+                } else if (typeof myDebugger.nextLine === 'function') {
+                  const lineInfo = myDebugger.nextLine();
+                  if (typeof lineInfo === 'number') currentLine = lineInfo;
+                }
+
+                let rawVars = {};
+                try {
+                  rawVars = myDebugger.variable() || {};
+                } catch (_) {}
+
+                if (currentLine && currentLine !== lastLine) {
+                  if (lastLine !== null) {
+                    const prevCode = cppCodeLines[lastLine - 1] || '';
+                    if (/\bcin\s*>>|\bgetline\b/.test(prevCode)) {
+                      cppStdinLinesRead = Math.min(cppStdinLinesRead + 1, cppInputLinesCount);
+                    }
+                  }
+
+                  const parsedVars = {};
+                  if (Array.isArray(rawVars)) {
+                    rawVars.forEach(vObj => {
+                      if (!vObj || !vObj.name) return;
+                      if (['cin', 'cout', 'endl', 'cerr', 'clog'].includes(vObj.name)) return;
+                      let rawV = (vObj.value !== undefined) ? vObj.value : vObj.val;
+                      const cType = (vObj.type || '').toLowerCase();
+                      const isUninitialized = rawV === 'NaN' || rawV === undefined || (typeof rawV === 'number' && isNaN(rawV));
+                      if (['int', 'long', 'short', 'int32', 'int64'].some(t => cType.includes(t))) {
+                        rawV = isUninitialized ? 0 : (parseInt(rawV, 10) || 0);
+                      } else if (['float', 'double'].some(t => cType.includes(t))) {
+                        rawV = isUninitialized ? 0.0 : (parseFloat(rawV) || 0.0);
+                      } else if (cType.includes('bool')) {
+                        rawV = rawV === true || rawV === 1 || rawV === '1' || rawV === 'true';
+                      }
+                      parsedVars[vObj.name] = rawV;
+                    });
+                  } else if (typeof rawVars === 'object') {
+                    for (let key in rawVars) {
+                      if (key && !key.startsWith('__') && !['cin', 'cout', 'endl', 'cerr', 'clog'].includes(key)) {
+                        const vObj = rawVars[key];
+                        let rawV = (vObj && typeof vObj === 'object') 
+                          ? ((vObj.value !== undefined) ? vObj.value : (vObj.val !== undefined ? vObj.val : vObj))
+                          : vObj;
+                        if (typeof rawV === 'string' && /^-?\d+$/.test(rawV.trim())) {
+                          rawV = parseInt(rawV.trim(), 10);
+                        } else if (typeof rawV === 'string' && /^-?\d+\.\d+$/.test(rawV.trim())) {
+                          rawV = parseFloat(rawV.trim());
+                        }
+                        parsedVars[key] = rawV;
+                      }
+                    }
+                  }
+
+                  steps.push({
+                    line: currentLine,
+                    variables: JSON.parse(JSON.stringify(parsedVars)),
+                    output: stdoutBuffer,
+                    stdin_line: cppStdinLinesRead
+                  });
+                  lastLine = currentLine;
+                }
+
+                const done = myDebugger.next();
+                stepCount++;
+                if (done) break;
+              }
+
+              sandboxRecordedSteps.value = steps;
+            } else {
+              // Python (Pyodide sys.settrace)
+              const py = await ensurePyodideLoaded();
+              const tracerScript = `
+import sys, json, io
+
+class TrackingStdin(io.StringIO):
+    def __init__(self, initial_value=''):
+        super().__init__(initial_value)
+        self.lines_read = 0
+
+    def readline(self, size=-1):
+        line = super().readline(size)
+        if line:
+            self.lines_read += 1
+        return line
+
+    def read(self, size=-1):
+        content = super().read(size)
+        if content:
+            self.lines_read += content.count('\\n') + (1 if not content.endswith('\\n') else 0)
+        return content
+
+class TraceRecorder:
+    def __init__(self, stdin_tracker=None, max_steps=1200):
+        self.steps = []
+        self.max_steps = max_steps
+        self.stdout_capture = io.StringIO()
+        self.stdin_tracker = stdin_tracker
+
+    def serialize_val(self, v):
+        if isinstance(v, (int, float, str, bool)) or v is None:
+            return v
+        if isinstance(v, (list, tuple)):
+            if len(v) > 0 and isinstance(v[0], (list, tuple)):
+                return [[self.serialize_val(cell) for cell in row[:15]] for row in v[:15]]
+            return [self.serialize_val(item) for item in v[:30]]
+        if isinstance(v, dict):
+            return {str(k): self.serialize_val(val) for k, val in list(v.items())[:15]}
+        return repr(v)
+
+    def trace_callback(self, frame, event, arg):
+        if len(self.steps) >= self.max_steps:
+            return None
+        if event == 'line':
+            code_obj = frame.f_code
+            if code_obj.co_filename == '<user_code>':
+                local_vars = {}
+                for k, v in frame.f_locals.items():
+                    if not k.startswith('__') and k not in ('sys', 'json', 'io', 'TraceRecorder', 'TrackingStdin'):
+                        try:
+                            local_vars[k] = self.serialize_val(v)
+                        except Exception:
+                            local_vars[k] = repr(v)
+
+                stdin_line = self.stdin_tracker.lines_read if self.stdin_tracker else 0
+                self.steps.append({
+                    "line": frame.f_lineno,
+                    "variables": local_vars,
+                    "output": self.stdout_capture.getvalue(),
+                    "stdin_line": stdin_line
+                })
+        return self.trace_callback
+
+def __run_with_trace(user_code_str, stdin_str):
+    import sys
+    stdin_tracker = TrackingStdin(stdin_str)
+    recorder = TraceRecorder(stdin_tracker=stdin_tracker)
+    old_stdout = sys.stdout
+    old_stdin = sys.stdin
+    sys.stdout = recorder.stdout_capture
+    sys.stdin = stdin_tracker
+
+    try:
+        compiled = compile(user_code_str, "<user_code>", "exec")
+        sys.settrace(recorder.trace_callback)
+        exec(compiled, {})
+    finally:
+        sys.settrace(None)
+        if recorder.steps:
+            recorder.steps[-1]["output"] = recorder.stdout_capture.getvalue()
+        sys.stdout = old_stdout
+        sys.stdin = old_stdin
+
+    return json.dumps(recorder.steps)
+`;
+              await py.runPythonAsync(tracerScript);
+              py.globals.set("__u_code", code);
+              py.globals.set("__u_stdin", inputData);
+              const jsonResult = await py.runPythonAsync("__run_with_trace(__u_code, __u_stdin)");
+              sandboxRecordedSteps.value = JSON.parse(jsonResult);
+            }
+
+            if (sandboxRecordedSteps.value.length === 0) {
+              showToast("程式碼執行完畢（無可追蹤的執行行）");
+              return;
+            }
+
+            sandboxMode.value = 'debug';
+            applySandboxStep(0);
+          } catch (err) {
+            console.error("進入逐行除錯失敗:", err);
+            sandboxError.value = parseExecutionError(err, lang);
+          } finally {
+            sandboxExecuting.value = false;
+          }
+        };
+
+        // 渲染指定步驟 (包含行高亮、變數 diff 橘色高亮與輸出同步)
+        const applySandboxStep = (index, scrollToTop = false) => {
+          if (index < 0 || index >= sandboxRecordedSteps.value.length) return;
+          sandboxCurrentStepIndex.value = index;
+          const step = sandboxRecordedSteps.value[index];
+
+          sandboxCurrentExecutingLine.value = step.line;
+          sandboxStdout.value = step.output || '';
+          sandboxCurrentStdinLine.value = (step && step.stdin_line !== undefined) ? step.stdin_line : 0;
+          sandboxExecFinished.value = (index === sandboxRecordedSteps.value.length - 1);
+
+          const prevStep = index > 0 ? sandboxRecordedSteps.value[index - 1] : null;
+          const prevVars = prevStep ? prevStep.variables : {};
+          const currentVars = step.variables || {};
+
+          const list = [];
+          for (let name in currentVars) {
+            const val = currentVars[name];
+            const item = categorizeVariable(name, val);
+            const prevVal = prevVars[name];
+            const isChanged = prevStep && (JSON.stringify(prevVal) !== JSON.stringify(val));
+            item.changed = isChanged;
+            list.push(item);
+          }
+          sandboxVariableList.value = list;
+
+          nextTick(() => {
+            if (sandboxCodeScrollRef.value) {
+              const activeLineEl = sandboxCodeScrollRef.value.querySelector('.exec-line-active');
+              if (activeLineEl) {
+                activeLineEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              }
+            }
+            if (sandboxVarScrollRef.value) {
+              const changedVarEl = sandboxVarScrollRef.value.querySelector('.var-changed-flash');
+              if (changedVarEl) {
+                changedVarEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              }
+            }
+            if (sandboxStdinScrollRef.value) {
+              const activeStdinEl = sandboxStdinScrollRef.value.querySelector('.stdin-line-active');
+              if (activeStdinEl) {
+                activeStdinEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              }
+            }
+            if (sandboxStdoutScrollRef.value) {
+              if (scrollToTop) {
+                sandboxStdoutScrollRef.value.scrollTop = 0;
+              } else {
+                sandboxStdoutScrollRef.value.scrollTop = sandboxStdoutScrollRef.value.scrollHeight;
+              }
+            }
+          });
+        };
+
+        // 步進按鈕動作：下一步
+        const stepForwardSandbox = () => {
+          if (sandboxCurrentStepIndex.value < sandboxRecordedSteps.value.length - 1) {
+            applySandboxStep(sandboxCurrentStepIndex.value + 1);
+          } else {
+            sandboxExecFinished.value = true;
+            showToast("已執行至最後一行！");
+          }
+        };
+
+        // 步進按鈕動作：上一步
+        const stepBackwardSandbox = () => {
+          if (sandboxCurrentStepIndex.value > 0) {
+            applySandboxStep(sandboxCurrentStepIndex.value - 1);
+          }
+        };
+
+        // 步進按鈕動作：重新開始
+        const resetSandboxExecution = () => {
+          sandboxError.value = null;
+          sandboxCurrentStdinLine.value = 0;
+          if (sandboxStdinScrollRef.value) {
+            sandboxStdinScrollRef.value.scrollTop = 0;
+          }
+          if (sandboxRecordedSteps.value.length > 0) {
+            applySandboxStep(0);
+          } else {
+            sandboxCurrentStepIndex.value = -1;
+            sandboxCurrentExecutingLine.value = null;
+            sandboxVariableList.value = [];
+            sandboxStdout.value = '';
+            sandboxExecFinished.value = false;
+          }
+        };
+
+        // 步進按鈕動作：執行到底
+        const runToBottomSandbox = () => {
+          if (sandboxRecordedSteps.value.length > 0) {
+            applySandboxStep(sandboxRecordedSteps.value.length - 1, true);
+            showToast("已執行至程式結束！");
+          }
+        };
+
+        // 輔助函式：檢查行是否已執行過
+        const hasSandboxExecutedLine = (lineNo) => {
+          if (sandboxCurrentStepIndex.value < 0) return false;
+          for (let i = 0; i <= sandboxCurrentStepIndex.value; i++) {
+            if (sandboxRecordedSteps.value[i] && sandboxRecordedSteps.value[i].line === lineNo) return true;
+          }
+          return false;
+        };
+
+        // 矩陣儲存格動態閃爍比對
+        const isSandboxCellChanged = (varName, idx) => {
+          if (sandboxCurrentStepIndex.value <= 0) return false;
+          const curr = sandboxRecordedSteps.value[sandboxCurrentStepIndex.value]?.variables?.[varName];
+          const prev = sandboxRecordedSteps.value[sandboxCurrentStepIndex.value - 1]?.variables?.[varName];
+          if (!curr || !prev) return false;
+          return curr[idx] !== prev[idx];
+        };
+
+        const isSandbox2DCellChanged = (varName, r, c) => {
+          if (sandboxCurrentStepIndex.value <= 0) return false;
+          const curr = sandboxRecordedSteps.value[sandboxCurrentStepIndex.value]?.variables?.[varName];
+          const prev = sandboxRecordedSteps.value[sandboxCurrentStepIndex.value - 1]?.variables?.[varName];
+          if (!curr || !prev || !curr[r] || !prev[r]) return false;
+          return curr[r][c] !== prev[r][c];
+        };
         const setupChapterDefault = () => {
           if (currentCourseChapters.value.length > 0) {
             form.value.chapterSelection = newestChapter.value || currentCourseChapters.value[0];
@@ -3907,7 +4605,55 @@ def __run_with_trace(user_code_str, stdin_str):
           varScrollRef,
           stdinScrollRef,
           stdoutScrollRef,
-          execError
+          execError,
+
+          // 自由練習沙盒 ＆ 線上輕量編譯/逐行除錯雙模系統
+          showSandboxModal,
+          sandboxMode,
+          sandboxLang,
+          sandboxWrapEnabled,
+          sandboxExecuting,
+          sandboxError,
+          sandboxStdout,
+          sandboxCode,
+          sandboxStdin,
+          sandboxLineCount,
+          sandboxParsedCodeLines,
+          sandboxParsedStdinLines,
+          sandboxTotalSteps,
+          sandboxFormattedOutputLines,
+          sandboxRecordedSteps,
+          sandboxCurrentStepIndex,
+          sandboxCurrentExecutingLine,
+          sandboxVariableList,
+          sandboxExecFinished,
+          sandboxCurrentStdinLine,
+          sandboxShowRawStdin,
+          sandboxEditorRef,
+          sandboxLineGutterRef,
+          sandboxCodeScrollRef,
+          sandboxVarScrollRef,
+          sandboxStdinScrollRef,
+          sandboxStdoutScrollRef,
+          openSandboxModal,
+          closeSandboxModal,
+          switchSandboxLang,
+          onSandboxCodeInput,
+          saveSandboxStdin,
+          handleSandboxTab,
+          syncSandboxEditorScroll,
+          autoFormatSandboxCode,
+          exportSandboxCode,
+          returnToSandboxEditor,
+          runSandboxDirect,
+          startSandboxDebug,
+          stepForwardSandbox,
+          stepBackwardSandbox,
+          resetSandboxExecution,
+          runToBottomSandbox,
+          hasSandboxExecutedLine,
+          isSandboxCellChanged,
+          isSandbox2DCellChanged
         };
       }
     }).mount('#app');
