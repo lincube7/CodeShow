@@ -1,0 +1,1799 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>程式設計教學展示系統</title>
+  
+  <!-- Google Apps Script 伺服器端資料直出注入 (0 毫秒秒開) -->
+  <script>
+    window.__INITIAL_SERVER_DATA__ = <?!= typeof serverInitialData !== 'undefined' ? serverInitialData : 'null' ?>;
+  </script>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Vue 3 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <!-- Google Fonts: JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <!-- Prism.js CDN 基底網址 (懶載入，老師開啟上傳彈窗時才注入) -->
+  <script>window.__PRISM_CDN__ = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0';</script>
+
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    .font-code {
+      font-family: 'JetBrains Mono', Consolas, Monaco, monospace !important;
+    }
+    /* 防複製保護樣式 */
+    .no-copy {
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      -khtml-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+    }
+    /* Carbon 預覽區塊樣式微調 */
+    #carbon-target pre[class*="language-"] {
+      margin: 0;
+      padding: 1.25rem 1rem;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+    .line-numbers .line-numbers-rows {
+      border-right: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    /* ========================================================
+       防 OCR 光學辨識進階防護層 (專門瓦解 Google Lens / iOS 原況文字)
+       ======================================================== */
+    /* 1. 色散微重影 (雙色微位移，打散邊界梯度) */
+    .ocr-chromatic-strong {
+      text-shadow: 
+        0.6px 0 rgba(255, 65, 84, 0.55),
+        -0.6px 0 rgba(32, 217, 210, 0.55),
+        0 0.35px rgba(255, 230, 0, 0.22) !important;
+    }
+    .ocr-chromatic-standard {
+      text-shadow: 
+        0.45px 0 rgba(255, 65, 84, 0.4),
+        -0.45px 0 rgba(32, 217, 210, 0.4) !important;
+    }
+
+    /* 2. 前置穿透式高頻柵線 (覆蓋在文字最上方 z-index: 20，物理切割字符筆畫) */
+    .ocr-fg-cutlines {
+      position: absolute;
+      inset: 0;
+      z-index: 20;
+      pointer-events: none;
+    }
+    .ocr-fg-strong {
+      background-image:
+        /* 37度 微細線切割 (切斷字母 loop 與連筆) */
+        repeating-linear-gradient(37deg, transparent, transparent 6px, rgba(255, 255, 255, 0.09) 6px, rgba(255, 255, 255, 0.09) 7px),
+        /* 127度 反向微細線切割 */
+        repeating-linear-gradient(127deg, transparent, transparent 7px, rgba(255, 255, 255, 0.08) 7px, rgba(255, 255, 255, 0.08) 8px),
+        /* 水平高頻微掃描線 (破壞水平筆劃偵測) */
+        repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0, 0, 0, 0.22) 3px, rgba(0, 0, 0, 0.22) 4px);
+    }
+    .ocr-fg-standard {
+      background-image:
+        repeating-linear-gradient(42deg, transparent, transparent 8px, rgba(255, 255, 255, 0.07) 8px, rgba(255, 255, 255, 0.07) 9px),
+        repeating-linear-gradient(0deg, transparent, transparent 4px, rgba(0, 0, 0, 0.16) 4px, rgba(0, 0, 0, 0.16) 5px);
+    }
+
+    /* 3. 偽字符混淆網 (Ghost Noise Tokens: 散佈微型符號，破壞 OCR 分詞) */
+    .ocr-ghost-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      pointer-events: none;
+      overflow: hidden;
+      opacity: 0.12;
+      font-family: monospace;
+      font-size: 10px;
+      line-height: 1.8;
+      color: #cbd5e1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-around;
+      padding: 0.5rem;
+    }
+    .ocr-ghost-row {
+      white-space: nowrap;
+      letter-spacing: 6px;
+    }
+
+    /* 4. 穿透式重複浮水印 (DOM 結構，中文字 token 混入程式碼) */
+    .ocr-ribbon-container {
+      position: absolute;
+      inset: 0;
+      z-index: 15;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .ocr-ribbon {
+      position: absolute;
+      left: -20%;
+      width: 140%;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 700;
+      color: rgba(255, 255, 255, 0.08);
+      transform: rotate(-18deg);
+      letter-spacing: 4px;
+      user-select: none;
+    }
+
+    /* 5. 文字微扭曲與基線微傾斜 (打破 OCR 橫向投影與行切分演算法) */
+    .ocr-text-warp {
+      transform: rotate(0.18deg) skewX(-0.35deg);
+      transform-origin: 20% 50%;
+      letter-spacing: 0.15px;
+    }
+
+    /* 6. 非線性漸層遮罩 (打亂全局與局部二值化閥值 Otsu Threshold) */
+    .ocr-vignette-mask {
+      position: absolute;
+      inset: 0;
+      z-index: 18;
+      pointer-events: none;
+      background: 
+        radial-gradient(ellipse at 25% 30%, rgba(255, 255, 255, 0.04) 0%, transparent 55%),
+        radial-gradient(ellipse at 80% 75%, rgba(0, 0, 0, 0.22) 0%, transparent 65%);
+      mix-blend-mode: overlay;
+    }
+
+    /* 7. 動態噪點 Canvas 圖層 (隨機產生不規則顆粒與高頻短刺) */
+    .ocr-noise-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 12;
+      pointer-events: none;
+      opacity: 0.18;
+      mix-blend-mode: screen;
+    }
+
+    /* 搜尋結果高亮 */
+    .search-highlight {
+      background-color: rgba(245, 158, 11, 0.35);
+      color: #fef08a;
+      font-weight: 700;
+      padding: 0 2px;
+      border-radius: 3px;
+    }
+
+    /* Zoom & Pan 圖片容器 */
+    .zoom-container {
+      overflow: hidden;
+      cursor: grab;
+      touch-action: none;
+      position: relative;
+      max-width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .zoom-container.panning {
+      cursor: grabbing;
+    }
+    .zoom-img {
+      transform-origin: center center;
+      max-width: 100%;
+      height: auto;
+      display: block;
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-drag: none;
+      transition: opacity 0.2s ease-in-out;
+    }
+
+    /* 搜尋框焦點光暈 */
+    .search-input:focus {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+    }
+
+    /* ========================================================
+       骨架畫面 (Skeleton Screen) - 純 CSS 掃光動效
+       ======================================================== */
+    @keyframes skeleton-shimmer {
+      0%   { background-position: -400px 0; }
+      100% { background-position: 400px 0; }
+    }
+    .skeleton-box {
+      background: linear-gradient(90deg,
+        #1e293b 25%,
+        #273249 50%,
+        #1e293b 75%
+      );
+      background-size: 800px 100%;
+      animation: skeleton-shimmer 1.4s ease-in-out infinite;
+      border-radius: 0.5rem;
+    }
+
+    /* 真實內容登場平滑淡入動畫 */
+    @keyframes content-fade-in {
+      from { opacity: 0; transform: translateY(3px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .animate-content-in {
+      animation: content-fade-in 0.22s ease-out forwards;
+    }
+
+    /* 方案 B：微光流光卡片動畫 (Glow Sweep) */
+    @keyframes glow-sweep {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+    .glow-sweep-layer {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, 
+        transparent 0%, 
+        rgba(99, 102, 241, 0.08) 50%, 
+        transparent 100%
+      );
+      animation: glow-sweep 2.2s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <div id="app" class="pb-16">
+
+    <!-- 頂部導覽列 -->
+    <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-30">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+            <span class="text-xl">💻</span>
+          </div>
+          <div>
+            <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+              程式設計教學展示庫
+              <span v-if="userInfo.isTeacher" class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                👨‍🏫 老師管理模式
+              </span>
+            </h1>
+            <p class="text-xs text-slate-400">課堂範例程式・防止複製保護</p>
+          </div>
+        </div>
+
+        <!-- 老師管理按鈕群 (僅老師可見) -->
+        <div v-if="userInfo.isTeacher" class="flex items-center space-x-2">
+          <button 
+            @click="openCourseModal" 
+            class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition border border-slate-700">
+            📚 課程管理
+          </button>
+          <button 
+            @click="openUploadModal" 
+            class="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-md shadow-indigo-600/30 flex items-center gap-1.5">
+            <span>➕</span> 上傳程式碼
+          </button>
+        </div>
+      </div>
+
+      <!-- 課程分頁 Tabs -->
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-2 overflow-x-auto scrollbar-none py-2 border-t border-slate-800/60">
+        <template v-if="loading && courses.length === 0">
+          <div class="skeleton-box h-8 w-28 rounded-lg shrink-0"></div>
+          <div class="skeleton-box h-8 w-36 rounded-lg shrink-0"></div>
+          <div class="skeleton-box h-8 w-24 rounded-lg shrink-0"></div>
+        </template>
+        <template v-else>
+          <button 
+            v-for="c in courses" 
+            :key="c"
+            @click="selectCourse(c)"
+            :class="currentCourse === c ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-900 text-slate-400 hover:text-slate-200 hover:bg-slate-800'"
+            class="px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition">
+            {{ c }}
+          </button>
+          <div v-if="courses.length === 0" class="text-xs text-slate-500 py-2">
+            目前尚未建立課程
+          </div>
+        </template>
+      </div>
+    </header>
+
+    <!-- 主要內容區 -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
+
+      <!-- 即時搜尋篩選框 + 顯示密度切換 -->
+      <div class="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-3 flex-1">
+          <div class="relative flex-1 max-w-sm">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm select-none">🔍</span>
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="搜尋題號或章節名稱..."
+              class="search-input w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-9 py-2 text-sm text-slate-100 placeholder-slate-500 transition"
+            />
+            <button
+              v-if="searchQuery"
+              @click="searchQuery = ''"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition text-base leading-none"
+              title="清除搜尋">✕</button>
+          </div>
+          <span v-if="searchQuery" class="text-xs text-slate-400 font-mono whitespace-nowrap">
+            共 <span class="text-indigo-400 font-bold">{{ searchResultCount }}</span> 筆結果
+          </span>
+        </div>
+
+        <!-- 卡片顯示密度切換 (緊密 / 舒適) -->
+        <div class="flex items-center space-x-1.5 self-end sm:self-auto bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-xs">
+          <span class="text-slate-400 text-[11px] px-2 font-mono">密度:</span>
+          <button 
+            type="button"
+            @click="setDensity('compact')"
+            :class="displayDensity === 'compact' ? 'bg-indigo-600 text-white font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+            class="px-2.5 py-1 rounded-lg transition flex items-center gap-1"
+            title="緊湊排列（一列 ≥5 題，適合快速檢索）">
+            <span>🔲</span> 緊湊
+          </button>
+          <button 
+            type="button"
+            @click="setDensity('comfortable')"
+            :class="displayDensity === 'comfortable' ? 'bg-indigo-600 text-white font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+            class="px-2.5 py-1 rounded-lg transition flex items-center gap-1"
+            title="舒適排列（較大卡片，文字與狀態更清晰）">
+            <span>🔳</span> 舒適
+          </button>
+        </div>
+      </div>
+
+      <!-- 方案 B：微光佔位區 (不設假卡片格數，以沉浸式科技流光面板傳遞同步狀態，絕無數量落差) -->
+      <div v-if="loading" class="space-y-4 animate-content-in">
+        <!-- 骨架：章節標題微光佔位 -->
+        <div class="flex items-center space-x-3 mb-4">
+          <span class="w-2.5 h-6 bg-indigo-500/40 rounded-full animate-pulse"></span>
+          <div class="skeleton-box h-7 w-40 rounded-lg"></div>
+        </div>
+
+        <!-- 沉浸式微光面板（無固定網格個數，純流光背景） -->
+        <div class="relative overflow-hidden rounded-2xl border border-slate-800/90 bg-slate-900/40 p-10 sm:p-14 flex flex-col items-center justify-center text-center">
+          <div class="glow-sweep-layer pointer-events-none"></div>
+
+          <div class="relative z-10 flex flex-col items-center justify-center space-y-3">
+            <div class="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shadow-inner">
+              <svg class="animate-spin h-6 w-6 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-slate-200 tracking-wide">正在載入課堂題庫...</p>
+              <p class="text-xs text-slate-500 mt-1 font-mono">同步最新教學範例程式碼</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 查無資料狀態 -->
+      <div v-else-if="groupedChapters.length === 0" class="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800/80 animate-content-in">
+        <div class="text-4xl mb-3">📂</div>
+        <h3 class="text-base font-medium text-slate-300">此課程尚無程式範例</h3>
+        <p class="text-xs text-slate-500 mt-1" v-if="userInfo.isTeacher">點選右上角「➕ 上傳程式碼」即可發布第一個教學題目。</p>
+        <p class="text-xs text-slate-500 mt-1" v-else>老師尚未上傳題目，請稍後再查看。</p>
+      </div>
+
+      <!-- 搜尋無結果 -->
+      <div v-else-if="filteredGroupedChapters.length === 0" class="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800/80 animate-content-in">
+        <div class="text-4xl mb-3">🔍</div>
+        <h3 class="text-base font-medium text-slate-300">找不到符合「{{ searchQuery }}」的題目</h3>
+        <p class="text-xs text-slate-500 mt-1">請嘗試其他關鍵字，或 <button @click="searchQuery=''" class="text-indigo-400 hover:underline">清除搜尋</button></p>
+      </div>
+
+      <!-- 章節分組 + 時間舊到新排序 + 分隔線 -->
+      <div v-else class="space-y-12 animate-content-in">
+        <section v-for="(group, idx) in filteredGroupedChapters" :key="group.chapter" class="relative">
+
+          
+          <!-- 章節標題列 -->
+          <div class="flex items-center justify-between mb-5">
+            <div class="flex items-center space-x-3">
+              <span class="w-2.5 h-6 bg-indigo-500 rounded-full"></span>
+              <h2 class="text-lg font-bold text-white tracking-wide" v-html="getHighlightedText(group.chapter, searchQuery)"></h2>
+              <span class="text-xs font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
+                {{ group.items.length }} 題
+              </span>
+
+              <!-- 老師刪除全章節按鈕 (僅老師可見) -->
+              <button 
+                v-if="userInfo.isTeacher" 
+                @click="confirmDeleteChapter(group)"
+                title="刪除此章節及其所有題目圖片"
+                class="px-2.5 py-1 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg border border-red-500/20 transition flex items-center gap-1">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                </svg>
+                <span>刪除章節</span>
+              </button>
+            </div>
+            <span v-if="userInfo.isTeacher" class="text-xs text-indigo-400 font-mono flex items-center gap-1">
+              <span>⇄</span> 點擊卡片 ◀ / ▶ 可一鍵調換順序
+            </span>
+            <span v-else class="text-xs text-slate-500 font-mono">
+              依教學進度排列
+            </span>
+          </div>
+
+          <!-- 該章節題目卡片列表 (支援老師點擊 ◀ / ▶ 微調，支援切換緊湊/舒適網格) -->
+          <div :class="gridDensityClass">
+            <div 
+              v-for="prob in group.items" 
+              :key="prob.problemNo"
+              :class="displayDensity === 'compact' ? 'p-3' : 'p-4'"
+              class="group relative bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-indigo-500/60 rounded-xl transition-all duration-150 hover:shadow-lg hover:shadow-indigo-500/10 flex flex-col justify-between cursor-pointer"
+              @click="openImageModal(prob)">
+              
+              <div class="flex items-center justify-between gap-1 mb-2">
+                <span 
+                  class="font-mono font-bold px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 truncate"
+                  :class="displayDensity === 'compact' ? 'text-xs' : 'text-sm'"
+                  v-html="getHighlightedText(prob.problemNo, searchQuery)">
+                </span>
+
+                <!-- 老師管理按鈕群 (調序 ◀ / ▶ + 刪除) -->
+                <div v-if="userInfo.isTeacher" class="flex items-center space-x-0.5 shrink-0" @click.stop>
+                  <button 
+                    @click.stop="moveProblem(group, prob, -1)" 
+                    title="往前移"
+                    :disabled="group.items[0]?.problemNo === prob.problemNo"
+                    class="w-5 h-5 flex items-center justify-center text-slate-300 hover:text-white bg-slate-800 hover:bg-indigo-600 rounded text-[10px] font-bold transition disabled:opacity-20 disabled:pointer-events-none border border-slate-700">
+                    ◀
+                  </button>
+                  <button 
+                    @click.stop="moveProblem(group, prob, 1)" 
+                    title="往後移"
+                    :disabled="group.items[group.items.length - 1]?.problemNo === prob.problemNo"
+                    class="w-5 h-5 flex items-center justify-center text-slate-300 hover:text-white bg-slate-800 hover:bg-indigo-600 rounded text-[10px] font-bold transition disabled:opacity-20 disabled:pointer-events-none border border-slate-700">
+                    ▶
+                  </button>
+                  <button 
+                    @click.stop="confirmDelete(prob)"
+                    title="刪除此題"
+                    class="w-5 h-5 flex items-center justify-center text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded transition text-xs ml-0.5">
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              <div class="pt-2 border-t border-slate-800/60 flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                <span class="flex items-center gap-1 group-hover:text-indigo-300 transition-colors">
+                  <span>📄</span> 檢視
+                </span>
+                <span class="text-[10px] text-slate-500">{{ prob.formattedTime ? prob.formattedTime.split(' ')[0] : '' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 章節間的分隔線 (最後一個章節不顯示) -->
+          <hr v-if="idx < filteredGroupedChapters.length - 1" class="mt-12 border-slate-800/80 border-dashed" />
+        </section>
+      </div>
+    </main>
+
+    <!-- ==================== 彈窗 1：檢視程式碼圖片 (學生/老師防複製展示) ==================== -->
+    <div
+      v-if="activeProblem"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm"
+      @click.self="closeImageModal">
+
+      <div class="relative bg-slate-900 border border-slate-700 rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+        <!-- 彈窗頂部標題 + Zoom 控制列 -->
+        <div class="px-5 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/90 gap-3">
+          <div class="flex items-center space-x-2 min-w-0">
+            <span class="px-2.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono text-xs font-bold border border-indigo-500/30 shrink-0">
+              {{ activeProblem.problemNo }}
+            </span>
+            <span class="text-xs text-slate-400 truncate">({{ activeProblem.chapter }})</span>
+          </div>
+
+          <!-- Zoom 控制列 + 手勢說明 -->
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button @click="zoomStep(-1)" title="縮小" class="w-7 h-7 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-sm font-bold transition border border-slate-700">－</button>
+            <span class="text-xs font-mono text-slate-300 w-12 text-center tabular-nums">{{ Math.round(zoomLevel * 100) }}%</span>
+            <button @click="zoomStep(1)" title="放大" class="w-7 h-7 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-sm font-bold transition border border-slate-700">＋</button>
+            <button @click="resetZoom" title="重設 100%" class="px-2 h-7 flex items-center rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs transition border border-slate-700">↺ 重設</button>
+            <button @click="showGestureHint = !showGestureHint" title="顯示縮放與手勢操作說明" class="px-2 h-7 flex items-center gap-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs transition border border-slate-700">
+              <span>💡</span>
+              <span class="hidden sm:inline">手勢說明</span>
+            </button>
+          </div>
+
+          <button
+            @click="closeImageModal"
+            class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition shrink-0">
+            ✕
+          </button>
+        </div>
+
+        <!-- 點擊手勢說明按鈕後出現的說明卡片 (獨立置於頂層，避免被 zoom-container 的 pointerdown 劫持) -->
+        <transition enter-active-class="transition duration-150 ease-out" enter-from-class="opacity-0 -translate-y-2" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition duration-100 ease-in" leave-from-class="opacity-100 translate-y-0" leave-to-class="opacity-0 -translate-y-2">
+          <div 
+            v-if="showGestureHint" 
+            class="absolute top-16 left-1/2 -translate-x-1/2 z-50 bg-slate-900/98 border border-indigo-500/60 text-slate-100 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 backdrop-blur w-[90%] max-w-md">
+            <div class="text-2xl select-none shrink-0">🤏</div>
+            <div class="text-xs flex-1">
+              <p class="font-bold text-indigo-300">手勢縮放與平移操作說明</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">手機可雙指捏合縮放，電腦支援滾輪；滑鼠或手指按住可任意拖曳平移。</p>
+            </div>
+            <button 
+              type="button"
+              @click.stop="showGestureHint = false" 
+              class="text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-lg shrink-0 transition shadow-md shadow-indigo-600/30 active:scale-95">
+              我知道了
+            </button>
+          </div>
+        </transition>
+
+        <!-- 圖片展示區 (嚴格防複製保護 + Zoom & Pan + 懶載入骨架屏) -->
+        <div
+          class="zoom-container no-copy select-none flex-1 bg-slate-950"
+          :class="{ panning: isPanning }"
+          ref="zoomContainerRef"
+          @wheel.prevent="onWheel"
+          @pointerdown="onPointerDown"
+          @pointermove="onPointerMove"
+          @pointerup="onPointerUp"
+          @pointercancel="onPointerUp"
+          style="min-height: 320px; max-height: calc(92vh - 110px);">
+
+          <!-- 圖片載入中骨架屏動畫 -->
+          <div v-if="isImgLoading" class="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm pointer-events-none">
+            <svg class="animate-spin h-7 w-7 text-indigo-500 mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+            </svg>
+            <span class="text-xs text-slate-400 font-mono tracking-wider">高畫質圖片載入中...</span>
+          </div>
+
+          <div
+            class="relative select-none pointer-events-none"
+            :style="{
+              transform: `translate(${panX}px, ${panY}px) scale(${zoomLevel})`,
+              transformOrigin: 'center center',
+              display: 'inline-block'
+            }">
+            <img
+              :src="activeProblem.imageUrl"
+              :alt="activeProblem.problemNo"
+              class="zoom-img rounded-lg shadow-2xl"
+              :class="{ 'opacity-0': isImgLoading, 'opacity-100': !isImgLoading }"
+              loading="lazy"
+              decoding="async"
+              @load="isImgLoading = false"
+              oncontextmenu="return false;"
+              draggable="false"
+              @error="handleImageError" />
+
+            <!-- 透明浮水印防護覆蓋層 (隨縮放與平移完整覆蓋) -->
+            <div
+              class="absolute inset-0 pointer-events-none flex items-center justify-center opacity-10 text-white font-bold text-3xl transform -rotate-12 select-none"
+              style="z-index:2;">
+              程式設計課堂教學範例・請親自手打練習
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部提示說明 -->
+        <div class="px-5 py-2 bg-slate-900/90 border-t border-slate-800 text-center text-xs text-slate-400 flex items-center justify-center gap-1.5">
+          <span>🔒</span>
+          <span>防複製模式啟用中：請對照圖片手動輸入程式碼。滾輪 / 雙指縮放可放大；拖曳可平移。</span>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ==================== 彈窗 2：老師上傳區 (Carbon 風格預覽與轉圖) ==================== -->
+    <div 
+      v-if="showUploadModal" 
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm"
+      @click.self="showUploadModal = false">
+      
+      <div class="relative bg-slate-900 border border-slate-700 rounded-2xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+        <!-- 彈窗頂部 -->
+        <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+          <div>
+            <h3 class="text-base font-bold text-white flex items-center gap-2">
+              <span>🚀</span> 發布新程式碼 (Carbon 圖片化)
+            </h3>
+            <p class="text-xs text-slate-400">貼上程式碼後自動上色並轉為高畫質防複製圖片存入 Google 雲端硬碟</p>
+          </div>
+          <button @click="showUploadModal = false" class="text-slate-400 hover:text-white">✕</button>
+        </div>
+
+        <!-- 填寫表單區 -->
+        <div class="p-6 overflow-y-auto space-y-4">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <!-- 課程選擇 -->
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">所屬課程</label>
+              <select v-model="form.course" @change="onFormCourseChange" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+                <option v-for="c in courses" :key="c" :value="c">{{ c }}</option>
+              </select>
+            </div>
+
+            <!-- 章節選擇或新增 -->
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <label class="block text-xs font-medium text-slate-300">
+                  章節名稱
+                </label>
+                <button 
+                  v-if="currentCourseChapters.length > 0"
+                  type="button" 
+                  @click="toggleChapterMode" 
+                  class="text-[11px] text-indigo-400 hover:text-indigo-300 transition">
+                  {{ form.chapterSelection === '__NEW__' ? '選取既有章節 ↩' : '➕ 自訂新章節' }}
+                </button>
+              </div>
+
+              <!-- 下拉選單：列出所有已輸入的章節供選擇，預設停在最新 -->
+              <select 
+                v-if="currentCourseChapters.length > 0 && form.chapterSelection !== '__NEW__'"
+                v-model="form.chapterSelection" 
+                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+                <option v-for="ch in currentCourseChapters" :key="ch" :value="ch">
+                  {{ ch }} {{ ch === newestChapter ? ' (最新)' : '' }}
+                </option>
+                <option value="__NEW__">➕ 自訂新章節...</option>
+              </select>
+
+              <!-- 輸入框：自訂新章節 (若尚無章節或選擇自訂) -->
+              <input 
+                v-else
+                type="text" 
+                v-model="form.newChapterName" 
+                placeholder="例如：二、選擇"
+                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500" />
+            </div>
+
+            <!-- 題號 -->
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">
+                題號 (重複時自動覆蓋舊版)
+              </label>
+              <input 
+                type="text" 
+                v-model="form.problemNo" 
+                placeholder="例如：HW-01 或 01-1"
+                class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-indigo-500" />
+            </div>
+          </div>
+
+          <!-- 語言選擇 -->
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-medium text-slate-300">程式語言</label>
+            <div class="flex space-x-1.5">
+              <button 
+                v-for="lang in ['python', 'c', 'cpp', 'java', 'javascript']" 
+                :key="lang"
+                type="button"
+                @click="changeLang(lang)"
+                :class="form.language === lang ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'"
+                class="px-2.5 py-1 text-xs rounded-md uppercase font-mono transition">
+                {{ lang }}
+              </button>
+            </div>
+          </div>
+
+          <!-- 🛡️ 防 OCR 干擾強度設定 (預設強力防護) -->
+          <div class="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 space-y-2.5">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div>
+                <div class="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                  <span>🛡️</span>
+                  <span>防 OCR 複製強度</span>
+                  <span class="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">預設推薦</span>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-0.5">專門反制 Google 智慧鏡頭、iOS 原況文字與 OCR 截圖取字</p>
+              </div>
+              <div class="flex space-x-1.5 shrink-0">
+                <button 
+                  type="button"
+                  @click="setOcrProtection('strong')"
+                  :class="form.ocrProtection === 'strong' ? 'bg-emerald-600 text-white font-bold shadow-md shadow-emerald-600/30 ring-1 ring-emerald-400' : 'bg-slate-800 text-slate-400 hover:text-white'"
+                  class="px-3 py-1.5 text-xs rounded-lg transition flex items-center gap-1">
+                  <span>⚡ 強力防護 (預設)</span>
+                </button>
+                <button 
+                  type="button"
+                  @click="setOcrProtection('standard')"
+                  :class="form.ocrProtection === 'standard' ? 'bg-indigo-600 text-white font-bold shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400' : 'bg-slate-800 text-slate-400 hover:text-white'"
+                  class="px-3 py-1.5 text-xs rounded-lg transition">
+                  標準防護
+                </button>
+                <button 
+                  type="button"
+                  @click="setOcrProtection('none')"
+                  :class="form.ocrProtection === 'none' ? 'bg-slate-700 text-white font-bold' : 'bg-slate-800 text-slate-500 hover:text-white'"
+                  class="px-2.5 py-1.5 text-xs rounded-lg transition">
+                  關閉
+                </button>
+              </div>
+            </div>
+
+            <!-- OCR 防護說明摺疊切換 (UX 改進) -->
+            <div class="pt-2 border-t border-slate-800/80">
+              <button 
+                type="button" 
+                @click="showOcrDetail = !showOcrDetail" 
+                class="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition">
+                <span>{{ showOcrDetail ? '▾ 收合防護等級技術細節' : '▸ 查看防護機制對比說明（強力 vs 標準 vs 關閉）' }}</span>
+              </button>
+              
+              <div v-if="showOcrDetail" class="mt-2 text-[11px] text-slate-400 space-y-1.5 bg-slate-900/90 p-3 rounded-lg border border-slate-800">
+                <div class="flex items-start gap-2">
+                  <span class="text-emerald-400 font-bold shrink-0">⚡ 強力防護：</span>
+                  <span><strong>全維度粉碎 OCR 演算法</strong>。結合「雙色微色散 + 37°/127° 雙向物理微切線 + 動態隨機微噪點 + 文字微扭曲 (Warp) + 混淆假字符網 + 浮水印 + 非線性漸層」，讓 Google 鏡頭的字符連通、二值化與水平行投影全部失準。</span>
+                </div>
+                <div class="flex items-start gap-2">
+                  <span class="text-indigo-400 font-bold shrink-0">🛡️ 標準防護：</span>
+                  <span>細緻單向 42° 微細切線 + 輕度色散微影，維持極度俐落的代碼閱讀感，阻斷初階手機相機文字掃描。</span>
+                </div>
+                <div class="flex items-start gap-2">
+                  <span class="text-slate-500 font-bold shrink-0">⭕ 關閉防護：</span>
+                  <span>不加入任何干擾紋理，產出原始純淨 Carbon 圖片（文字易被 OCR 一鍵複製）。</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 程式碼輸入區 -->
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">貼上程式碼</label>
+            <textarea 
+              v-model="form.code" 
+              @input="onCodeInput"
+              rows="7" 
+              placeholder="在此貼上或編寫程式碼..."
+              class="w-full bg-slate-950 font-code border border-slate-800 rounded-lg p-3 text-xs text-emerald-400 focus:outline-none focus:border-indigo-500"></textarea>
+          </div>
+
+          <!-- Carbon 預覽區塊 (將被 html2canvas 轉成圖片) -->
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="block text-xs font-medium text-slate-400">
+                🎨 Carbon 圖片渲染即時預覽 (將以此視覺效果輸出為圖片)
+              </label>
+              <button 
+                type="button" 
+                @click="refreshNoise" 
+                title="隨機變更動態噪點種子" 
+                class="text-[11px] text-indigo-400 hover:text-indigo-300 transition flex items-center gap-1">
+                <span>🎲 隨機變換干擾噪點</span>
+              </button>
+            </div>
+            
+            <div class="overflow-x-auto p-2 bg-slate-950/60 rounded-xl border border-slate-800 flex justify-center">
+              <div 
+                id="carbon-target" 
+                class="p-7 rounded-2xl bg-gradient-to-br from-indigo-500 via-purple-600 to-pink-500 inline-block min-w-[420px] max-w-full">
+                
+                <!-- Carbon 卡片核心主體 -->
+                <div class="bg-[#1e1e2e] rounded-xl shadow-2xl overflow-hidden border border-white/10 font-code relative">
+                  <!-- 頂部視窗控制列 (Mac 風格紅黃綠圓點) -->
+                  <div class="px-4 py-3 bg-[#181825] border-b border-white/5 flex items-center justify-between relative z-30">
+                    <div class="flex items-center space-x-2">
+                      <div class="w-3 h-3 rounded-full bg-[#ff5f56]"></div>
+                      <div class="w-3 h-3 rounded-full bg-[#ffbd2e]"></div>
+                      <div class="w-3 h-3 rounded-full bg-[#27c93f]"></div>
+                    </div>
+                    <div class="text-[11px] font-mono text-slate-400 px-2 py-0.5 rounded bg-black/30">
+                      {{ form.problemNo || 'code_sample' }}.{{ form.language }}
+                    </div>
+                    <div class="w-12"></div>
+                  </div>
+
+                  <!-- 程式碼主體容器 (承載前景干擾柵線、動態噪點、偽字符混淆網與浮水印) -->
+                  <div class="relative overflow-hidden" ref="codeContainerRef">
+                    
+                    <!-- 動態隨機噪點畫布 (打亂固定去噪濾鏡) -->
+                    <canvas 
+                      v-if="form.ocrProtection === 'strong'" 
+                      ref="noiseCanvasRef" 
+                      class="ocr-noise-canvas select-none pointer-events-none">
+                    </canvas>
+
+                    <!-- 非線性二值化漸層遮罩 (破壞 Otsu 閥值二值化) -->
+                    <div 
+                      v-if="form.ocrProtection === 'strong'" 
+                      class="ocr-vignette-mask select-none pointer-events-none">
+                    </div>
+
+                    <!-- 偽字符混淆網 (Ghost Noise Tokens: 散佈微型符號，破壞 OCR 分詞與邊界偵測) -->
+                    <div v-if="form.ocrProtection === 'strong'" class="ocr-ghost-layer select-none pointer-events-none">
+                      <div v-for="(row, rIdx) in ghostRows" :key="rIdx" class="ocr-ghost-row">
+                        {{ row }}
+                      </div>
+                    </div>
+
+                    <!-- 穿透式重複浮水印 (DOM 渲染，完美相容 html2canvas，中文字干擾 OCR token) -->
+                    <div v-if="form.ocrProtection === 'strong'" class="ocr-ribbon-container select-none pointer-events-none">
+                      <div class="ocr-ribbon" style="top: 15%;">課堂教學範例・請親自手打練習</div>
+                      <div class="ocr-ribbon" style="top: 48%;">課堂教學範例・請親自手打練習</div>
+                      <div class="ocr-ribbon" style="top: 80%;">課堂教學範例・請親自手打練習</div>
+                    </div>
+
+                    <!-- 真正的程式碼高亮主體 (層級 z-index: 10，強力防護下支援微扭曲 text-warp) -->
+                    <div class="p-2 relative z-10" :class="form.ocrProtection === 'strong' ? 'ocr-text-warp' : ''">
+                      <pre class="line-numbers text-xs"><code ref="previewCode" :class="['language-' + form.language, form.ocrProtection === 'strong' ? 'ocr-chromatic-strong' : (form.ocrProtection === 'standard' ? 'ocr-chromatic-standard' : '')]">{{ form.code || '// 尚未輸入程式碼' }}</code></pre>
+                    </div>
+
+                    <!-- 前置穿透式干擾柵線 (覆蓋在文字最上方 z-index: 20，物理切割字體筆畫) -->
+                    <div 
+                      v-if="form.ocrProtection !== 'none'" 
+                      class="ocr-fg-cutlines select-none pointer-events-none"
+                      :class="form.ocrProtection === 'strong' ? 'ocr-fg-strong' : 'ocr-fg-standard'">
+                    </div>
+
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 彈窗底部操作列 -->
+        <div class="px-6 py-3.5 bg-slate-900 border-t border-slate-800 flex items-center justify-between">
+          <p class="text-xs text-slate-500">
+            💡 若同一課程中已有相同題號，舊圖將自動覆蓋。
+          </p>
+          <div class="flex items-center space-x-2">
+            <button 
+              @click="showUploadModal = false" 
+              class="px-4 py-2 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300">
+              取消
+            </button>
+            <button 
+              @click="submitProblem" 
+              :disabled="uploading"
+              class="px-5 py-2 text-xs font-bold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition disabled:opacity-50 flex items-center gap-2">
+              <span v-if="uploading" class="animate-spin">⏳</span>
+              <span>{{ uploading ? '產生圖片並上傳中...' : '轉成圖片並發布 🚀' }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== 彈窗 3：課程分類管理 ==================== -->
+    <div 
+      v-if="showCourseModal" 
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+      @click.self="showCourseModal = false">
+      <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+        <h3 class="text-base font-bold text-white mb-4 flex items-center gap-2">
+          <span>📚</span> 課程分頁管理
+        </h3>
+
+        <!-- 新增課程 -->
+        <div class="flex space-x-2 mb-5">
+          <input 
+            type="text" 
+            v-model="newCourseName" 
+            placeholder="輸入新課程名稱 (如: C++ 演算法班)"
+            class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500" />
+          <button 
+            @click="createCourse" 
+            class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold whitespace-nowrap">
+            新增
+          </button>
+        </div>
+
+        <!-- 現有課程清單 -->
+        <div class="space-y-2 max-h-60 overflow-y-auto">
+          <div 
+            v-for="c in courses" 
+            :key="c" 
+            class="flex items-center justify-between p-2.5 bg-slate-800/60 rounded-lg border border-slate-700/60 text-xs">
+            <span class="font-medium text-slate-200">{{ c }}</span>
+            <button 
+              @click="removeCourse(c)" 
+              class="text-red-400 hover:text-red-300 px-2 py-1 hover:bg-red-500/10 rounded transition">
+              刪除
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-6 flex justify-end">
+          <button @click="showCourseModal = false" class="px-4 py-2 text-xs bg-slate-800 text-slate-300 rounded-lg">關閉</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 順序儲存通知 Toast (老師拖曳排序後提示) -->
+    <div 
+      v-if="toastMessage" 
+      class="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-emerald-600/95 text-white px-4 py-2.5 rounded-xl shadow-2xl text-xs font-medium border border-emerald-400/40 backdrop-blur animate-bounce">
+      <span>✓</span>
+      <span>{{ toastMessage }}</span>
+    </div>
+
+  </div>
+
+  <script>
+    const { createApp, ref, computed, onMounted, nextTick } = Vue;
+
+    createApp({
+      setup() {
+        const loading = ref(false);
+        const uploading = ref(false);
+        const userInfo = ref({ email: '', isTeacher: false });
+        const courses = ref([]);
+        const currentCourse = ref('');
+        const rawProblems = ref([]);
+        const toastMessage = ref('');
+
+        const showToast = (msg) => {
+          toastMessage.value = msg;
+          setTimeout(() => { toastMessage.value = ''; }, 2500);
+        };
+
+        // 彈窗狀態
+        const showUploadModal = ref(false);
+        const showCourseModal = ref(false);
+        const activeProblem = ref(null);
+        const newCourseName = ref('');
+
+        // 上傳表單
+        const form = ref({
+          course: '',
+          chapterSelection: '',
+          newChapterName: '',
+          problemNo: '',
+          ocrProtection: 'strong', // 預設強力防護 ('strong' | 'standard' | 'none')
+          language: 'python',
+          code: `# 課堂示範程式
+def calculate_sum(n):
+    total = 0
+    for i in range(1, n + 1):
+        total += i
+    return total
+
+print("Result:", calculate_sum(10))`
+        });
+
+        const previewCode = ref(null);
+        const noiseCanvasRef = ref(null);
+        const codeContainerRef = ref(null);
+        const showOcrDetail = ref(false);
+
+        // 卡片顯示密度 (緊密 compact / 舒適 comfortable)
+        const displayDensity = ref(localStorage.getItem('showcode_density') || 'compact');
+        const setDensity = (val) => {
+          displayDensity.value = val;
+          try { localStorage.setItem('showcode_density', val); } catch (_) {}
+        };
+        const gridDensityClass = computed(() => {
+          return displayDensity.value === 'compact'
+            ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3'
+            : 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4';
+        });
+
+        // 搜尋結果高亮處理
+        const escapeHtml = (str) => {
+          return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
+        };
+        const getHighlightedText = (text, query) => {
+          if (!text) return '';
+          if (!query || !query.trim()) return escapeHtml(text);
+          try {
+            const q = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`(${q})`, 'gi');
+            return escapeHtml(text).replace(regex, '<mark class="search-highlight">$1</mark>');
+          } catch (_) {
+            return escapeHtml(text);
+          }
+        };
+
+        // 隨機偽字符混淆矩陣 (破壞 OCR 分詞與注意力權重)
+        const ghostRows = ref([]);
+        const generateGhostRows = () => {
+          const charPool = ['·', ';', "'", ',', '_', '~', ':', '`', '|', 'x', 'o', '1', 'l', '0', 'O', 'I'];
+          const rows = [];
+          for (let r = 0; r < 8; r++) {
+            let row = '';
+            for (let c = 0; c < 28; c++) {
+              row += charPool[Math.floor(Math.random() * charPool.length)] + ' ';
+            }
+            rows.push(row.trim());
+          }
+          ghostRows.value = rows;
+        };
+        generateGhostRows();
+
+        // 動態隨機微噪點繪製 (破壞神經網絡去噪捲積)
+        const drawDynamicNoise = () => {
+          if (form.value.ocrProtection !== 'strong') return;
+          const canvas = noiseCanvasRef.value;
+          if (!canvas) return;
+          const parent = canvas.parentElement;
+          if (!parent) return;
+
+          const w = parent.clientWidth || 450;
+          const h = parent.clientHeight || 260;
+          canvas.width = w;
+          canvas.height = h;
+
+          const ctx = canvas.getContext('2d');
+          ctx.clearRect(0, 0, w, h);
+
+          // 1. 隨機微彩色顆粒噪點
+          const numDots = Math.floor((w * h) / 120);
+          for (let i = 0; i < numDots; i++) {
+            const x = Math.random() * w;
+            const y = Math.random() * h;
+            const r = Math.floor(Math.random() * 255);
+            const g = Math.floor(Math.random() * 255);
+            const b = Math.floor(Math.random() * 255);
+            const a = (Math.random() * 0.12 + 0.04).toFixed(3);
+            ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
+            ctx.fillRect(x, y, 1.2, 1.2);
+          }
+
+          // 2. 隨機毛刺短微線 (物理切斷連通組件)
+          const numLines = Math.floor(w / 35);
+          for (let i = 0; i < numLines; i++) {
+            const x1 = Math.random() * w;
+            const y1 = Math.random() * h;
+            const len = Math.random() * 14 + 6;
+            const angle = (Math.random() * 360) * Math.PI / 180;
+            ctx.strokeStyle = `rgba(255, 255, 255, ${(Math.random() * 0.09 + 0.03).toFixed(3)})`;
+            ctx.lineWidth = 0.8;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x1 + Math.cos(angle) * len, y1 + Math.sin(angle) * len);
+            ctx.stroke();
+          }
+        };
+
+        const refreshNoise = () => {
+          generateGhostRows();
+          nextTick(() => {
+            drawDynamicNoise();
+          });
+        };
+
+        const setOcrProtection = (level) => {
+          form.value.ocrProtection = level;
+          nextTick(() => {
+            updateHighlight();
+            drawDynamicNoise();
+          });
+        };
+
+        // 中文數字轉整數解析工具 (支援 一、二、三...、十、十一...)
+        const parseChineseNumber = (str) => {
+          const digits = { '零': 0, '一': 1, '二': 2, '兩': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9 };
+          if (/^\d+$/.test(str)) return parseInt(str, 10);
+          if (str === '十') return 10;
+          if (str.startsWith('十')) return 10 + (digits[str[1]] || 0);
+          if (str.includes('十')) {
+            const parts = str.split('十');
+            return (digits[parts[0]] || 1) * 10 + (digits[parts[1]] || 0);
+          }
+          return digits[str] !== undefined ? digits[str] : null;
+        };
+
+        // 取得章節排序權重 (自動辨識 二、選擇、第2章、02 等序號)
+        const getChapterWeight = (chapterName) => {
+          if (!chapterName) return 99999;
+          const match = chapterName.match(/^(?:第|Chapter\s*)?([0-9一二兩三四五六七八九十]+)(?:[章節、.\s\-_]|$)/i);
+          if (match) {
+            const num = parseChineseNumber(match[1]);
+            if (num !== null && !isNaN(num)) return num;
+          }
+          return 99999;
+        };
+
+        // 初始化：呼叫 getInitialData (由 CacheService 加速，通常 < 1s)
+        const init = () => {
+          loading.value = true;
+          if (typeof google !== 'undefined' && google.script && google.script.run) {
+            google.script.run
+              .withSuccessHandler(res => {
+                if (res) {
+                  userInfo.value = res.userInfo || { email: '', isTeacher: false };
+                  courses.value = res.courses || [];
+                  currentCourse.value = res.currentCourse || (courses.value[0] || '');
+                  rawProblems.value = res.problems || [];
+                }
+                loading.value = false;
+              })
+              .withFailureHandler(err => {
+                console.warn('初始化失敗，啟用降級容錯載入:', err);
+                google.script.run
+                  .withSuccessHandler(u => {
+                    userInfo.value = u;
+                    loadCourses();
+                  })
+                  .withFailureHandler(() => { loadCourses(); })
+                  .getUserInfo();
+              })
+              .getInitialData(currentCourse.value);
+          } else {
+            // 本地測試模擬狀態 (以老師身分檢視)
+            console.log("非 GAS 環境，以預覽模式運行");
+            userInfo.value = { email: "teacher@school.edu.tw", isTeacher: true };
+            courses.value = ["Python 基礎程式設計", "C++ 競程演算法"];
+            currentCourse.value = courses.value[0];
+            rawProblems.value = [
+              {
+                course: "Python 基礎程式設計",
+                chapter: "第一章 變數與資料型態",
+                problemNo: "01-1",
+                imageUrl: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=1000&auto=format&fit=crop&q=80",
+                timestamp: 1710000000000,
+                formattedTime: "2026/10/01 09:30",
+                orderIndex: 1
+              },
+              {
+                course: "Python 基礎程式設計",
+                chapter: "第一章 變數與資料型態",
+                problemNo: "01-2",
+                imageUrl: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=1000&auto=format&fit=crop&q=80",
+                timestamp: 1710003600000,
+                formattedTime: "2026/10/01 10:30",
+                orderIndex: 2
+              },
+              {
+                course: "Python 基礎程式設計",
+                chapter: "第二章 流程控制與迴圈",
+                problemNo: "02-1",
+                imageUrl: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=1000&auto=format&fit=crop&q=80",
+                timestamp: 1710090000000,
+                formattedTime: "2026/10/02 14:00",
+                orderIndex: 1
+              }
+            ];
+            loading.value = false;
+          }
+        };
+
+        const loadCourses = () => {
+          if (typeof google === 'undefined') return;
+          google.script.run
+            .withSuccessHandler(res => {
+              courses.value = res || [];
+              if (courses.value.length > 0 && !currentCourse.value) {
+                currentCourse.value = courses.value[0];
+              }
+              if (currentCourse.value) {
+                loadProblems(currentCourse.value);
+              } else {
+                loading.value = false;
+              }
+            })
+            .withFailureHandler(err => {
+              alert("讀取課程失敗: " + err.message);
+              loading.value = false;
+            })
+            .getCourses();
+        };
+
+        const selectCourse = (c) => {
+          currentCourse.value = c;
+          searchQuery.value = '';
+          loadProblems(c);
+        };
+
+        const loadProblems = (courseName) => {
+          loading.value = true;
+          if (typeof google === 'undefined') {
+            loading.value = false;
+            return;
+          }
+          google.script.run
+            .withSuccessHandler(res => {
+              rawProblems.value = res || [];
+              loading.value = false;
+            })
+            .withFailureHandler(err => {
+              alert("讀取題目失敗: " + err.message);
+              loading.value = false;
+            })
+            .getProblemsByCourse(courseName);
+        };
+
+        // 依章節智慧序號排序；同章節內優先依拖曳 orderIndex，相同則依時間 (由舊到新)
+        const groupedChapters = computed(() => {
+          const map = {};
+          rawProblems.value.forEach(p => {
+            const ch = p.chapter || '未分類章節';
+            if (!map[ch]) map[ch] = [];
+            map[ch].push(p);
+          });
+
+          return Object.keys(map)
+            .sort((a, b) => {
+              const weightA = getChapterWeight(a);
+              const weightB = getChapterWeight(b);
+              if (weightA !== weightB) {
+                return weightA - weightB;
+              }
+              return a.localeCompare(b, 'zh-Hant');
+            })
+            .map(chName => {
+              const items = map[chName].sort((a, b) => {
+                const ordA = (a.orderIndex !== undefined && a.orderIndex !== null) ? Number(a.orderIndex) : 999999;
+                const ordB = (b.orderIndex !== undefined && b.orderIndex !== null) ? Number(b.orderIndex) : 999999;
+                if (ordA !== ordB) return ordA - ordB;
+                return a.timestamp - b.timestamp;
+              });
+              return {
+                chapter: chName,
+                items: items
+              };
+            });
+        });
+
+        // 即時搜尋與篩選
+        const searchQuery = ref('');
+
+        const filteredGroupedChapters = computed(() => {
+          const q = searchQuery.value.trim().toLowerCase();
+          if (!q) return groupedChapters.value;
+
+          return groupedChapters.value
+            .map(group => {
+              const matchChapter = group.chapter.toLowerCase().includes(q);
+              const filteredItems = group.items.filter(item =>
+                matchChapter ||
+                item.problemNo.toLowerCase().includes(q) ||
+                (item.chapter && item.chapter.toLowerCase().includes(q))
+              );
+              return {
+                chapter: group.chapter,
+                items: filteredItems
+              };
+            })
+            .filter(group => group.items.length > 0);
+        });
+
+        const searchResultCount = computed(() => {
+          return filteredGroupedChapters.value.reduce((total, group) => total + group.items.length, 0);
+        });
+
+        // 當前課程已有的章節名稱（依智慧序號排列）
+        const currentCourseChapters = computed(() => {
+          const set = new Set();
+          rawProblems.value.forEach(p => { if (p.chapter) set.add(p.chapter); });
+          return Array.from(set).sort((a, b) => {
+            const weightA = getChapterWeight(a);
+            const weightB = getChapterWeight(b);
+            if (weightA !== weightB) return weightA - weightB;
+            return a.localeCompare(b, 'zh-Hant');
+          });
+        });
+
+        // 最新輸入的章節（最近一筆題目的章節）
+        const newestChapter = computed(() => {
+          if (rawProblems.value.length === 0) return '';
+          let latest = rawProblems.value[0];
+          rawProblems.value.forEach(p => {
+            if (p.timestamp > latest.timestamp) {
+              latest = p;
+            }
+          });
+          return latest.chapter || '';
+        });
+
+        // 圖片縮放與拖曳平移 (Zoom & Pan)
+        const zoomLevel = ref(1.0);
+        const panX = ref(0);
+        const panY = ref(0);
+        const isPanning = ref(false);
+        const zoomContainerRef = ref(null);
+
+        const activePointers = new Map();
+        let dragStartX = 0;
+        let dragStartY = 0;
+        let initialPinchDistance = 0;
+        let initialPinchZoom = 1.0;
+
+        const resetZoom = () => {
+          zoomLevel.value = 1.0;
+          panX.value = 0;
+          panY.value = 0;
+          isPanning.value = false;
+          activePointers.clear();
+        };
+
+        const zoomStep = (dir) => {
+          const next = Math.min(Math.max(zoomLevel.value + dir * 0.25, 0.5), 5.0);
+          zoomLevel.value = Math.round(next * 100) / 100;
+        };
+
+        const onWheel = (e) => {
+          const delta = e.deltaY < 0 ? 1.15 : 0.85;
+          const next = Math.min(Math.max(zoomLevel.value * delta, 0.5), 5.0);
+          zoomLevel.value = Math.round(next * 100) / 100;
+        };
+
+        const getPointersDistance = () => {
+          const pts = Array.from(activePointers.values());
+          if (pts.length < 2) return 0;
+          const dx = pts[0].x - pts[1].x;
+          const dy = pts[0].y - pts[1].y;
+          return Math.hypot(dx, dy);
+        };
+
+        const onPointerDown = (e) => {
+          activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          if (e.currentTarget && e.currentTarget.setPointerCapture) {
+            try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+          }
+          if (activePointers.size === 1) {
+            isPanning.value = true;
+            dragStartX = e.clientX - panX.value;
+            dragStartY = e.clientY - panY.value;
+          } else if (activePointers.size === 2) {
+            isPanning.value = false;
+            initialPinchDistance = getPointersDistance();
+            initialPinchZoom = zoomLevel.value;
+          }
+        };
+
+        const onPointerMove = (e) => {
+          if (!activePointers.has(e.pointerId)) return;
+          activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+          if (activePointers.size >= 2 && initialPinchDistance > 0) {
+            const currentDist = getPointersDistance();
+            if (currentDist > 0) {
+              const ratio = currentDist / initialPinchDistance;
+              const next = Math.min(Math.max(initialPinchZoom * ratio, 0.5), 5.0);
+              zoomLevel.value = Math.round(next * 100) / 100;
+            }
+          } else if (activePointers.size === 1 && isPanning.value) {
+            panX.value = Math.round(e.clientX - dragStartX);
+            panY.value = Math.round(e.clientY - dragStartY);
+          }
+        };
+
+        const onPointerUp = (e) => {
+          activePointers.delete(e.pointerId);
+          if (e.currentTarget && e.currentTarget.releasePointerCapture) {
+            try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
+          }
+          if (activePointers.size === 1) {
+            const remaining = Array.from(activePointers.values())[0];
+            dragStartX = remaining.x - panX.value;
+            dragStartY = remaining.y - panY.value;
+            isPanning.value = true;
+          } else if (activePointers.size === 0) {
+            isPanning.value = false;
+          }
+        };
+
+        // 手勢指引與圖片載入骨架屏狀態
+        const showGestureHint = ref(false);
+        const isImgLoading = ref(true);
+
+        const dismissGestureHint = () => {
+          showGestureHint.value = false;
+        };
+
+        // 圖片預覽彈窗 (手勢說明預設不主動彈出，需使用者點擊「💡 手勢說明」才顯示)
+        const openImageModal = (prob) => {
+          resetZoom();
+          isImgLoading.value = true;
+          showGestureHint.value = false;
+          activeProblem.value = prob;
+        };
+        const closeImageModal = () => {
+          activeProblem.value = null;
+          showGestureHint.value = false;
+          resetZoom();
+        };
+
+        const handleImageError = (e) => {
+          console.warn("圖片載入異常，嘗試直接開起原始檔");
+          isImgLoading.value = false;
+        };
+
+        // 設定表單章節預設值（預設停在最新的章節）
+        const setupChapterDefault = () => {
+          if (currentCourseChapters.value.length > 0) {
+            form.value.chapterSelection = newestChapter.value || currentCourseChapters.value[0];
+            form.value.newChapterName = '';
+          } else {
+            form.value.chapterSelection = '__NEW__';
+            form.value.newChapterName = '';
+          }
+        };
+
+        // 非關鍵資源按需加載 (html2canvas 僅在老師上傳時才載入，免除所有學生首屏載入 200KB 庫)
+        const ensureHtml2CanvasLoaded = () => {
+          if (window.html2canvas) return Promise.resolve();
+          return new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+            script.onload = resolve;
+            script.onerror = () => reject(new Error("載入轉圖模組失敗，請檢查網路連線"));
+            document.head.appendChild(script);
+          });
+        };
+
+        // Prism.js 懶載入 (僅老師開啟上傳彈窗時才注入，學生完全無需等待)
+        let prismLoaded = false;
+        const ensurePrismLoaded = () => {
+          if (prismLoaded || window.Prism) { prismLoaded = true; return Promise.resolve(); }
+          const cdn = window.__PRISM_CDN__;
+          const addLink = href => {
+            const el = document.createElement('link');
+            el.rel = 'stylesheet'; el.href = href;
+            document.head.appendChild(el);
+          };
+          addLink(`${cdn}/themes/prism-tomorrow.min.css`);
+          addLink(`${cdn}/plugins/line-numbers/prism-line-numbers.min.css`);
+          const loadScript = src => new Promise((res, rej) => {
+            const s = document.createElement('script');
+            s.src = src; s.onload = res; s.onerror = rej;
+            document.head.appendChild(s);
+          });
+          return loadScript(`${cdn}/prism.min.js`)
+            .then(() => loadScript(`${cdn}/plugins/autoloader/prism-autoloader.min.js`))
+            .then(() => loadScript(`${cdn}/plugins/line-numbers/prism-line-numbers.min.js`))
+            .then(() => { prismLoaded = true; });
+        };
+
+        // 上傳彈窗開啟 (背景預先預熱加載 html2canvas 與 Prism.js)
+        const openUploadModal = () => {
+          ensureHtml2CanvasLoaded().catch(() => {});
+          ensurePrismLoaded().then(() => {
+            nextTick(() => { updateHighlight(); refreshNoise(); });
+          }).catch(() => {});
+          form.value.course = currentCourse.value || (courses.value[0] || '');
+          form.value.ocrProtection = 'strong';
+          setupChapterDefault();
+          showUploadModal.value = true;
+        };
+
+        const onFormCourseChange = () => {
+          if (form.value.course !== currentCourse.value) {
+            selectCourse(form.value.course);
+          }
+          setupChapterDefault();
+        };
+
+        const toggleChapterMode = () => {
+          if (form.value.chapterSelection === '__NEW__') {
+            form.value.chapterSelection = newestChapter.value || currentCourseChapters.value[0];
+          } else {
+            form.value.chapterSelection = '__NEW__';
+          }
+        };
+
+        const changeLang = (lang) => {
+          form.value.language = lang;
+          updateHighlight();
+          nextTick(() => {
+            drawDynamicNoise();
+          });
+        };
+
+        const updateHighlight = () => {
+          nextTick(() => {
+            if (previewCode.value && window.Prism) {
+              Prism.highlightElement(previewCode.value);
+            }
+          });
+        };
+
+        // 程式碼貼上防抖 (避免頻繁觸發 Prism 重繪與噪點重繪)
+        let codeInputTimer = null;
+        const onCodeInput = () => {
+          if (codeInputTimer) clearTimeout(codeInputTimer);
+          codeInputTimer = setTimeout(() => {
+            updateHighlight();
+            drawDynamicNoise();
+          }, 120);
+        };
+
+        // 智能圖片壓縮函式 (Downscale + 高品質 JPEG 壓縮，將體積由 3~4MB 壓至 ~250KB)
+        const compressCanvas = (sourceCanvas, maxWidth = 1350, quality = 0.88) => {
+          let targetW = sourceCanvas.width;
+          let targetH = sourceCanvas.height;
+          if (targetW > maxWidth) {
+            const scale = maxWidth / targetW;
+            targetW = maxWidth;
+            targetH = Math.round(targetH * scale);
+          }
+          const tempCanvas = document.createElement("canvas");
+          tempCanvas.width = targetW;
+          tempCanvas.height = targetH;
+          const ctx = tempCanvas.getContext("2d");
+          // 填補 Carbon 外框底色，確保輸出 JPEG 時無透明穿透黑底瑕疵
+          ctx.fillStyle = "#020617";
+          ctx.fillRect(0, 0, targetW, targetH);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          ctx.drawImage(sourceCanvas, 0, 0, targetW, targetH);
+          return tempCanvas.toDataURL("image/jpeg", quality);
+        };
+
+        // 產生圖片並送出
+        const submitProblem = async () => {
+          const actualChapter = form.value.chapterSelection === '__NEW__' || currentCourseChapters.value.length === 0
+            ? (form.value.newChapterName || '').trim()
+            : (form.value.chapterSelection || '').trim();
+
+          if (!form.value.course) return alert("請選擇課程！");
+          if (!actualChapter) return alert("請輸入或選擇章節名稱！");
+          if (!form.value.problemNo) return alert("請輸入題號！");
+          if (!form.value.code) return alert("請輸入程式碼！");
+
+          uploading.value = true;
+          try {
+            // 確保 html2canvas 已載入（懶載入）
+            await ensureHtml2CanvasLoaded();
+
+            // 確保噪點畫布於轉圖前即時繪製完畢
+            if (form.value.ocrProtection === 'strong') {
+              drawDynamicNoise();
+            }
+            await nextTick();
+
+            const targetEl = document.getElementById("carbon-target");
+            // 使用 html2canvas 將 DOM 轉為 2 倍高清 Canvas
+            const rawCanvas = await html2canvas(targetEl, {
+              scale: 2,
+              useCORS: true,
+              backgroundColor: null,
+              logging: false
+            });
+
+            // 智能壓縮與縮放最佳化
+            const base64Data = compressCanvas(rawCanvas, 1350, 0.88);
+
+            if (typeof google !== 'undefined' && google.script && google.script.run) {
+              google.script.run
+                .withSuccessHandler(res => {
+                  uploading.value = false;
+                  showUploadModal.value = false;
+                  showToast(res.isOverwrite ? `題號 ${res.problemNo} 已成功覆蓋更新！` : `題號 ${res.problemNo} 發布成功！`, 'success');
+                  loadProblems(form.value.course);
+                })
+                .withFailureHandler(err => {
+                  uploading.value = false;
+                  alert("上傳失敗: " + err.message);
+                })
+                .saveProblem(form.value.course, actualChapter, form.value.problemNo, base64Data);
+            } else {
+              // 本地模擬
+              setTimeout(() => {
+                uploading.value = false;
+                showUploadModal.value = false;
+                alert("本地預覽成功 (未連接 GAS，圖片已智能壓縮至優化尺寸)");
+              }, 1000);
+            }
+          } catch (e) {
+            uploading.value = false;
+            alert("產生圖片失敗: " + e.message);
+          }
+        };
+
+        // 刪除題目
+        const confirmDelete = (prob) => {
+          if (!confirm(`確定要刪除「${prob.chapter}」的題號【${prob.problemNo}】嗎？\n此操作會將 Google 雲端硬碟的圖片移至垃圾桶。`)) {
+            return;
+          }
+          if (typeof google === 'undefined') return;
+          loading.value = true;
+          google.script.run
+            .withSuccessHandler(() => {
+              loadProblems(currentCourse.value);
+            })
+            .withFailureHandler(err => {
+              alert("刪除失敗: " + err.message);
+              loading.value = false;
+            })
+            .deleteProblem(prob.course, prob.problemNo);
+        };
+
+        // 課程管理彈窗
+        const openCourseModal = () => {
+          showCourseModal.value = true;
+        };
+
+        const createCourse = () => {
+          const name = newCourseName.value.trim();
+          if (!name) return alert("請輸入課程名稱");
+          if (typeof google === 'undefined') {
+            courses.value.push(name);
+            newCourseName.value = '';
+            return;
+          }
+          google.script.run
+            .withSuccessHandler(res => {
+              courses.value = res.courses;
+              currentCourse.value = name;
+              newCourseName.value = '';
+              loadProblems(name);
+            })
+            .withFailureHandler(err => {
+              alert("新增課程失敗: " + err.message);
+            })
+            .addCourse(name);
+        };
+
+        const removeCourse = (courseName) => {
+          if (!confirm(`確定要刪除課程「${courseName}」嗎？\n該課程下的所有題目與圖片也將一併刪除！`)) {
+            return;
+          }
+          if (typeof google === 'undefined') return;
+          google.script.run
+            .withSuccessHandler(res => {
+              courses.value = res.courses;
+              currentCourse.value = courses.value[0] || '';
+              if (currentCourse.value) {
+                loadProblems(currentCourse.value);
+              } else {
+                rawProblems.value = [];
+              }
+            })
+            .withFailureHandler(err => {
+              alert("刪除課程失敗: " + err.message);
+            })
+            .deleteCourse(courseName);
+        };
+
+        const updateLocalOrder = (chapterName, orderedNos) => {
+          const orderMap = {};
+          orderedNos.forEach((no, idx) => { orderMap[no] = idx + 1; });
+          
+          // 深度建立新物件陣列，確保 Vue 3 computed (groupedChapters) 能即時響應重新排序
+          rawProblems.value = rawProblems.value.map(p => {
+            if ((p.chapter || '未分類章節') === chapterName && orderMap[p.problemNo] !== undefined) {
+              return {
+                ...p,
+                orderIndex: orderMap[p.problemNo]
+              };
+            }
+            return p;
+          });
+        };
+
+        // 一鍵前移 / 後移微調功能 (給老師最輕鬆快速穩定的操作體驗)
+        const moveProblem = (group, prob, direction) => {
+          const items = [...group.items];
+          const currentIndex = items.findIndex(item => item.problemNo === prob.problemNo);
+          if (currentIndex === -1) return;
+
+          const targetIndex = currentIndex + direction;
+          if (targetIndex < 0 || targetIndex >= items.length) {
+            return; // 已經在該章節最前或最後
+          }
+
+          // 交換位置
+          const temp = items[currentIndex];
+          items[currentIndex] = items[targetIndex];
+          items[targetIndex] = temp;
+
+          const newOrder = items.map(item => item.problemNo);
+          updateLocalOrder(group.chapter, newOrder);
+
+          if (typeof google !== 'undefined' && google.script && google.script.run) {
+            google.script.run
+              .withSuccessHandler(() => {
+                showToast(`「${group.chapter}」順序已更新 ✓`);
+              })
+              .withFailureHandler((err) => {
+                alert("更新排序失敗: " + err.message);
+              })
+              .updateProblemsOrder(currentCourse.value, group.chapter, newOrder);
+          } else {
+            showToast(`本地測試：已更新「${group.chapter}」順序 ✓`);
+          }
+        };
+
+        // 刪除整個章節
+        const confirmDeleteChapter = (group) => {
+          const count = group.items.length;
+          if (!confirm(`⚠️ 警告：確定要刪除「${group.chapter}」嗎？\n該章節下的 ${count} 題程式碼圖片將會全部刪除並移至 Google 雲端硬碟垃圾桶！此操作無法復原。`)) {
+            return;
+          }
+
+          loading.value = true;
+          if (typeof google !== 'undefined' && google.script && google.script.run) {
+            google.script.run
+              .withSuccessHandler((res) => {
+                showToast(`已成功刪除「${group.chapter}」及 ${res.deletedCount} 張圖片 ✓`);
+                loadProblems(currentCourse.value);
+              })
+              .withFailureHandler((err) => {
+                alert("刪除章節失敗: " + err.message);
+                loading.value = false;
+              })
+              .deleteChapter(currentCourse.value, group.chapter);
+          } else {
+            // 本地測試模擬
+            rawProblems.value = rawProblems.value.filter(p => (p.chapter || '未分類章節') !== group.chapter);
+            loading.value = false;
+            showToast(`本地測試：已刪除「${group.chapter}」及其題目 ✓`);
+          }
+        };
+
+        onMounted(() => {
+          init();
+        });
+
+        return {
+          loading,
+          uploading,
+          userInfo,
+          courses,
+          currentCourse,
+          groupedChapters,
+          filteredGroupedChapters,
+          searchQuery,
+          searchResultCount,
+          currentCourseChapters,
+          newestChapter,
+          displayDensity,
+          setDensity,
+          gridDensityClass,
+          getHighlightedText,
+          activeProblem,
+          showUploadModal,
+          showCourseModal,
+          toastMessage,
+          zoomLevel,
+          panX,
+          panY,
+          isPanning,
+          zoomContainerRef,
+          resetZoom,
+          zoomStep,
+          onWheel,
+          onPointerDown,
+          onPointerMove,
+          onPointerUp,
+          showGestureHint,
+          dismissGestureHint,
+          isImgLoading,
+          form,
+          newCourseName,
+          previewCode,
+          noiseCanvasRef,
+          codeContainerRef,
+          ghostRows,
+          showOcrDetail,
+          setOcrProtection,
+          refreshNoise,
+          onCodeInput,
+          selectCourse,
+          openImageModal,
+          closeImageModal,
+          handleImageError,
+          openUploadModal,
+          onFormCourseChange,
+          toggleChapterMode,
+          changeLang,
+          updateHighlight,
+          submitProblem,
+          confirmDelete,
+          confirmDeleteChapter,
+          moveProblem,
+          openCourseModal,
+          createCourse,
+          removeCourse
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
