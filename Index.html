@@ -630,8 +630,7 @@
     <!-- ==================== 彈窗 1：檢視程式碼圖片 (學生/老師防複製展示) ==================== -->
     <div
       v-if="activeProblem"
-      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm"
-      @click.self="closeImageModal">
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
 
       <div 
         :class="viewerMode === 'exec' ? 'max-w-6xl xl:max-w-7xl h-[92vh]' : 'max-w-5xl max-h-[92vh]'"
