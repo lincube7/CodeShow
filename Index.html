@@ -2164,7 +2164,7 @@
             type="text"
             v-model="newWatchInput"
             @keydown.enter.prevent="addWatchExpression"
-            placeholder="輸入運算式 (如: b*b - 4*a*c 或 i < 5)..."
+            placeholder="輸入運算式 (如: b*b - 4*a*c 或 i &lt; 5)..."
             class="flex-1 px-2.5 py-1.5 bg-slate-900 border border-slate-700 focus:border-indigo-500 rounded-lg text-xs text-white font-mono placeholder-slate-500 focus:outline-none select-text">
           <button
             type="button"
@@ -2242,7 +2242,7 @@
   </div>
 
   <script>
-    const { createApp, ref, computed, onMounted, nextTick } = Vue;
+    const { createApp, ref, reactive, computed, onMounted, nextTick } = Vue;
 
     createApp({
       setup() {
