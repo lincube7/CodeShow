@@ -1199,8 +1199,7 @@
     <!-- ==================== 彈窗 2：老師上傳區 (Carbon 風格預覽與轉圖) ==================== -->
     <div 
       v-if="showUploadModal" 
-      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm"
-      @click.self="showUploadModal = false">
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm">
       
       <div class="relative bg-slate-900 border border-slate-700 rounded-2xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
         <!-- 彈窗頂部 -->
@@ -2230,11 +2229,12 @@
 
     </div>
 
-    <!-- 順序儲存通知 Toast (老師拖曳排序後提示) -->
+    <!-- 全域通知 Toast (支援成功與錯誤提示) -->
     <div 
       v-if="toastMessage" 
-      class="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-emerald-600/95 text-white px-4 py-2.5 rounded-xl shadow-2xl text-xs font-medium border border-emerald-400/40 backdrop-blur animate-bounce">
-      <span>✓</span>
+      :class="toastType === 'error' ? 'bg-rose-600/95 border-rose-400/40' : 'bg-emerald-600/95 border-emerald-400/40'"
+      class="fixed bottom-6 right-6 z-50 flex items-center gap-2 text-white px-4 py-2.5 rounded-xl shadow-2xl text-xs font-medium border backdrop-blur animate-bounce">
+      <span>{{ toastType === 'error' ? '⚠️' : '✓' }}</span>
       <span>{{ toastMessage }}</span>
     </div>
 
@@ -2252,10 +2252,12 @@
         const currentCourse = ref('');
         const rawProblems = ref([]);
         const toastMessage = ref('');
+        const toastType = ref('success');
 
-        const showToast = (msg) => {
+        const showToast = (msg, type = 'success') => {
           toastMessage.value = msg;
-          setTimeout(() => { toastMessage.value = ''; }, 2500);
+          toastType.value = type;
+          setTimeout(() => { toastMessage.value = ''; }, 3000);
         };
 
         // 彈窗狀態
@@ -2584,7 +2586,7 @@ print("Result:", calculate_sum(10))`
               }
             })
             .withFailureHandler(err => {
-              alert("讀取課程失敗: " + err.message);
+              showToast("讀取課程失敗: " + err.message, "error");
               loading.value = false;
             })
             .getCourses();
@@ -2608,7 +2610,7 @@ print("Result:", calculate_sum(10))`
               loading.value = false;
             })
             .withFailureHandler(err => {
-              alert("讀取題目失敗: " + err.message);
+              showToast("讀取題目失敗: " + err.message, "error");
               loading.value = false;
             })
             .getProblemsByCourse(courseName);
@@ -4865,6 +4867,7 @@ def __run_with_trace(user_code_str, stdin_str):
           showUploadModal,
           showCourseModal,
           toastMessage,
+          toastType,
           zoomLevel,
           panX,
           panY,
