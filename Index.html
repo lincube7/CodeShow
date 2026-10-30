@@ -899,9 +899,23 @@
                     <span>📦</span>
                     <span>變數表 (Variables)</span>
                   </div>
-                  <span class="text-[10px] font-mono text-slate-500">
-                    {{ variableList.length }} 個變數
-                  </span>
+                  <div class="flex items-center gap-2">
+                    <button
+                      type="button"
+                      @click="toggleWatchPanel"
+                      :class="showWatchPanel ? 'bg-indigo-600/40 text-indigo-300 border-indigo-500/50' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'"
+                      class="px-2 py-0.5 rounded text-[11px] font-sans border transition flex items-center gap-1 active:scale-95 shadow-sm"
+                      title="開啟/收合可拖曳即時運算監看面板">
+                      <span>🔍</span>
+                      <span>監看式</span>
+                      <span v-if="watchExpressions.length > 0" class="px-1 py-0.2 rounded-full bg-indigo-500/30 text-indigo-200 text-[10px] font-mono">
+                        {{ watchExpressions.length }}
+                      </span>
+                    </button>
+                    <span class="text-[10px] font-mono text-slate-500">
+                      {{ variableList.length }} 個變數
+                    </span>
+                  </div>
                 </div>
 
                 <div class="flex-1 overflow-y-auto p-3 space-y-2.5 font-mono text-xs" ref="varScrollRef">
@@ -1775,9 +1789,23 @@
                       <span>📦</span>
                       <span>變數表 (Variables)</span>
                     </div>
-                    <span class="text-[10px] font-mono text-slate-500">
-                      {{ sandboxVariableList.length }} 個變數
-                    </span>
+                    <div class="flex items-center gap-2">
+                      <button
+                        type="button"
+                        @click="toggleWatchPanel"
+                        :class="showWatchPanel ? 'bg-indigo-600/40 text-indigo-300 border-indigo-500/50' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'"
+                        class="px-2 py-0.5 rounded text-[11px] font-sans border transition flex items-center gap-1 active:scale-95 shadow-sm"
+                        title="開啟/收合可拖曳即時運算監看面板">
+                        <span>🔍</span>
+                        <span>監看式</span>
+                        <span v-if="watchExpressions.length > 0" class="px-1 py-0.2 rounded-full bg-indigo-500/30 text-indigo-200 text-[10px] font-mono">
+                          {{ watchExpressions.length }}
+                        </span>
+                      </button>
+                      <span class="text-[10px] font-mono text-slate-500">
+                        {{ sandboxVariableList.length }} 個變數
+                      </span>
+                    </div>
                   </div>
 
                   <div class="flex-1 overflow-y-auto p-3 space-y-2.5 font-mono text-xs" ref="sandboxVarScrollRef">
@@ -2094,6 +2122,113 @@
         </div>
 
       </div>
+    </div>
+
+    <!-- ==================== 浮動可拖曳：即時運算監看面板 (Watch Expressions) ==================== -->
+    <div
+      v-if="showWatchPanel"
+      class="fixed z-[70] flex flex-col bg-slate-900/95 border border-indigo-500/40 rounded-xl shadow-2xl backdrop-blur-md overflow-hidden text-slate-100 transition-shadow w-80 sm:w-96 max-h-[80vh]"
+      :style="{ top: watchPanelPos.y + 'px', left: watchPanelPos.x + 'px' }">
+      
+      <!-- 拖曳頂部標題列 -->
+      <div
+        @mousedown="startDragWatchPanel"
+        class="px-3.5 py-2.5 bg-slate-800/90 border-b border-slate-700/80 flex items-center justify-between cursor-move select-none shrink-0 group">
+        <div class="flex items-center gap-2">
+          <span class="text-sm">🔍</span>
+          <span class="font-bold text-xs text-indigo-300 font-sans">即時運算監看式 (Watch)</span>
+          <span class="text-[10px] text-slate-500 font-mono hidden sm:inline">(可拖曳至任意位置)</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <button
+            type="button"
+            @click.stop="resetWatchPanelPos"
+            class="text-[10px] text-slate-400 hover:text-slate-200 px-1.5 py-0.5 rounded bg-slate-700/50 hover:bg-slate-700 transition"
+            title="重設面板至預設位置">
+            歸位
+          </button>
+          <button
+            type="button"
+            @click.stop="showWatchPanel = false"
+            class="w-5 h-5 rounded hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition text-xs"
+            title="關閉監看面板">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <!-- 新增運算式輸入列 -->
+      <div class="p-2.5 bg-slate-950/60 border-b border-slate-800 shrink-0">
+        <div class="flex items-center gap-1.5">
+          <input
+            type="text"
+            v-model="newWatchInput"
+            @keydown.enter.prevent="addWatchExpression"
+            placeholder="輸入運算式 (如: b*b - 4*a*c 或 i < 5)..."
+            class="flex-1 px-2.5 py-1.5 bg-slate-900 border border-slate-700 focus:border-indigo-500 rounded-lg text-xs text-white font-mono placeholder-slate-500 focus:outline-none select-text">
+          <button
+            type="button"
+            @click="addWatchExpression"
+            class="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition shrink-0 active:scale-95 shadow-sm">
+            新增
+          </button>
+        </div>
+        <div class="text-[10px] text-slate-500 mt-1 pl-1 flex items-center justify-between">
+          <span>支援 +, -, *, /, %, **, Math 函式、陣列索引</span>
+          <span>按 Enter 新增</span>
+        </div>
+      </div>
+
+      <!-- 監看式清單區 -->
+      <div class="flex-1 overflow-y-auto p-2.5 space-y-2 select-text font-mono text-xs max-h-72">
+        <div v-if="evaluatedWatchList.length === 0" class="text-center py-6 text-slate-500 text-xs font-sans">
+          尚未新增監看式<br>
+          <span class="text-[11px] text-slate-600 mt-1 block">輸入如 b*b - 4*a*c 即可在每步除錯時即時觀察計算結果</span>
+        </div>
+
+        <div
+          v-for="(w, wIdx) in evaluatedWatchList"
+          :key="w.id"
+          class="bg-slate-950/80 rounded-lg p-2 border border-slate-800/90 hover:border-slate-700 transition flex flex-col gap-1">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-slate-200 truncate pr-2" :title="w.expr">{{ w.expr }}</span>
+            <button
+              type="button"
+              @click="removeWatchExpression(w.id)"
+              class="text-slate-500 hover:text-red-400 text-xs px-1 py-0.5 rounded hover:bg-slate-800 transition"
+              title="刪除此監看式">
+              ✕
+            </button>
+          </div>
+          <div class="flex items-center gap-1.5 text-xs pt-0.5 border-t border-slate-800/60">
+            <span class="text-slate-500 select-none">➜</span>
+            <span
+              v-if="w.ok"
+              class="font-bold text-emerald-400 break-all">
+              {{ w.value }}
+            </span>
+            <span
+              v-else
+              class="text-amber-400/90 text-[11px] truncate"
+              :title="w.error">
+              ⚠️ {{ w.error }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部提示列 -->
+      <div class="px-3 py-1.5 bg-slate-950/80 border-t border-slate-800 text-[10px] text-slate-500 flex items-center justify-between select-none">
+        <span>每走「下一步」數值自動連動更新</span>
+        <button
+          v-if="watchExpressions.length > 0"
+          type="button"
+          @click="clearAllWatchExpressions"
+          class="text-slate-400 hover:text-rose-400 transition">
+          清空全部
+        </button>
+      </div>
+
     </div>
 
     <!-- 順序儲存通知 Toast (老師拖曳排序後提示) -->
@@ -4138,6 +4273,164 @@ def __run_with_trace(user_code_str, stdin_str):
           if (!curr || !prev || !curr[r] || !prev[r]) return false;
           return curr[r][c] !== prev[r][c];
         };
+
+        // ==================== 即時運算監看式 (Watch Expressions) ====================
+        const showWatchPanel = ref(false);
+        const watchExpressions = ref([]); // [{ id, expr }]
+        const newWatchInput = ref('');
+        const watchPanelPos = reactive({
+          x: Math.max(20, (window.innerWidth || 1200) - 420),
+          y: 90
+        });
+        const isDraggingWatch = ref(false);
+        const dragWatchOffset = { x: 0, y: 0 };
+
+        // 讀取本機快取的監看式清單
+        try {
+          const savedWatches = localStorage.getItem('codeshow_watch_expressions');
+          if (savedWatches) {
+            const parsed = JSON.parse(savedWatches);
+            if (Array.isArray(parsed)) {
+              watchExpressions.value = parsed.filter(item => item && item.expr);
+            }
+          }
+        } catch (_) {}
+
+        const saveWatchExpressions = () => {
+          try {
+            localStorage.setItem('codeshow_watch_expressions', JSON.stringify(watchExpressions.value));
+          } catch (_) {}
+        };
+
+        const resetWatchPanelPos = () => {
+          watchPanelPos.x = Math.max(20, (window.innerWidth || 1200) - 420);
+          watchPanelPos.y = 90;
+        };
+
+        const toggleWatchPanel = () => {
+          showWatchPanel.value = !showWatchPanel.value;
+          if (showWatchPanel.value) {
+            // 每次開啟時若面板飄出視窗則自動歸位至可視範圍內
+            const maxW = window.innerWidth || 1200;
+            const maxH = window.innerHeight || 800;
+            if (watchPanelPos.x > maxW - 100 || watchPanelPos.x < 10) {
+              watchPanelPos.x = Math.max(20, maxW - 420);
+            }
+            if (watchPanelPos.y > maxH - 100 || watchPanelPos.y < 10) {
+              watchPanelPos.y = 90;
+            }
+          }
+        };
+
+        const addWatchExpression = () => {
+          const val = (newWatchInput.value || '').trim();
+          if (!val) return;
+          // 避免重複新增相同的算式
+          if (!watchExpressions.value.some(w => w.expr === val)) {
+            watchExpressions.value.push({
+              id: Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+              expr: val
+            });
+            saveWatchExpressions();
+          }
+          newWatchInput.value = '';
+        };
+
+        const removeWatchExpression = (id) => {
+          watchExpressions.value = watchExpressions.value.filter(w => w.id !== id);
+          saveWatchExpressions();
+        };
+
+        const clearAllWatchExpressions = () => {
+          watchExpressions.value = [];
+          saveWatchExpressions();
+        };
+
+        // 拖曳處理 (支援滑鼠拖移至螢幕任意位置，包含外側黑色背景)
+        const startDragWatchPanel = (e) => {
+          if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+          isDraggingWatch.value = true;
+          dragWatchOffset.x = e.clientX - watchPanelPos.x;
+          dragWatchOffset.y = e.clientY - watchPanelPos.y;
+
+          const onDragMove = (moveEvt) => {
+            if (!isDraggingWatch.value) return;
+            const newX = moveEvt.clientX - dragWatchOffset.x;
+            const newY = moveEvt.clientY - dragWatchOffset.y;
+            // 限制不要完全拖出螢幕外
+            const maxW = (window.innerWidth || 1200) - 80;
+            const maxH = (window.innerHeight || 800) - 60;
+            watchPanelPos.x = Math.max(10, Math.min(newX, maxW));
+            watchPanelPos.y = Math.max(10, Math.min(newY, maxH));
+          };
+
+          const onDragEnd = () => {
+            isDraggingWatch.value = false;
+            window.removeEventListener('mousemove', onDragMove);
+            window.removeEventListener('mouseup', onDragEnd);
+          };
+
+          window.addEventListener('mousemove', onDragMove);
+          window.addEventListener('mouseup', onDragEnd);
+        };
+
+        // 語法安全預處理：轉換 Python 常見運算子，利於 JS 引擎正確評估
+        const sanitizeWatchExpr = (rawExpr) => {
+          let s = String(rawExpr || '').trim();
+          s = s.replace(/\band\b/g, ' && ');
+          s = s.replace(/\bor\b/g, ' || ');
+          s = s.replace(/\bnot\s+/g, ' ! ');
+          s = s.replace(/\bTrue\b/g, 'true');
+          s = s.replace(/\bFalse\b/g, 'false');
+          s = s.replace(/\bNone\b/g, 'null');
+          return s;
+        };
+
+        // 取得當前除錯步驟的變數範疇 (根據沙盒或題庫除錯模式)
+        const getCurrentWatchScope = () => {
+          if (showSandboxModal.value && sandboxMode.value === 'debug') {
+            if (sandboxCurrentStepIndex.value >= 0 && sandboxRecordedSteps.value[sandboxCurrentStepIndex.value]) {
+              return sandboxRecordedSteps.value[sandboxCurrentStepIndex.value].variables || {};
+            }
+          } else if (activeProblem.value && viewerMode.value === 'debug') {
+            if (currentStepIndex.value >= 0 && recordedSteps.value[currentStepIndex.value]) {
+              return recordedSteps.value[currentStepIndex.value].variables || {};
+            }
+          }
+          return {};
+        };
+
+        // 動態即時計算監看式清單數值
+        const evaluatedWatchList = computed(() => {
+          const scope = getCurrentWatchScope();
+          const validKeys = Object.keys(scope).filter(k => /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(k));
+          const validVals = validKeys.map(k => scope[k]);
+
+          const preamble = 'var abs=Math.abs, min=Math.min, max=Math.max, sqrt=Math.sqrt, pow=Math.pow, floor=Math.floor, ceil=Math.ceil, round=Math.round; ' +
+                           'var len = function(x) { return (x && x.length !== undefined) ? x.length : 0; }; ' +
+                           'var sum = function(arr) { if(!Array.isArray(arr)) return 0; return arr.reduce(function(a,b){return a+b;}, 0); }; ';
+
+          return watchExpressions.value.map(w => {
+            const raw = (w.expr || '').trim();
+            if (!raw) return { id: w.id, expr: raw, ok: false, error: '運算式為空' };
+
+            const sanitized = sanitizeWatchExpr(raw);
+            try {
+              const fn = new Function(...validKeys, 'Math', preamble + 'return (' + sanitized + ');');
+              const res = fn(...validVals, Math);
+
+              if (res === undefined) {
+                return { id: w.id, expr: raw, ok: true, value: 'undefined' };
+              }
+              if (typeof res === 'object') {
+                return { id: w.id, expr: raw, ok: true, value: JSON.stringify(res) };
+              }
+              return { id: w.id, expr: raw, ok: true, value: String(res) };
+            } catch (err) {
+              return { id: w.id, expr: raw, ok: false, error: err.message };
+            }
+          });
+        });
         const setupChapterDefault = () => {
           if (currentCourseChapters.value.length > 0) {
             form.value.chapterSelection = newestChapter.value || currentCourseChapters.value[0];
@@ -4687,7 +4980,21 @@ def __run_with_trace(user_code_str, stdin_str):
           runToBottomSandbox,
           hasSandboxExecutedLine,
           isSandboxCellChanged,
-          isSandbox2DCellChanged
+          isSandbox2DCellChanged,
+
+          // 監看式 (Watch Expressions)
+          showWatchPanel,
+          watchExpressions,
+          newWatchInput,
+          watchPanelPos,
+          isDraggingWatch,
+          evaluatedWatchList,
+          toggleWatchPanel,
+          resetWatchPanelPos,
+          addWatchExpression,
+          removeWatchExpression,
+          clearAllWatchExpressions,
+          startDragWatchPanel
         };
       }
     }).mount('#app');
