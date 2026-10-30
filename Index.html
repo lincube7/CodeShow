@@ -652,7 +652,7 @@
           <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs shrink-0">
             <button
               type="button"
-              @click="viewerMode = 'image'"
+              @click="viewerMode = 'image'; showWatchPanel = false"
               :class="viewerMode === 'image' ? 'bg-indigo-600 text-white font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
               class="px-2.5 py-1 rounded-lg transition flex items-center gap-1">
               <span>🖼️</span> 圖片模式
@@ -2822,6 +2822,7 @@ print("Result:", calculate_sum(10))`
           initExecutionState(prob);
         };
         const closeImageModal = () => {
+          showWatchPanel.value = false;
           activeProblem.value = null;
           showGestureHint.value = false;
           resetZoom();
@@ -3704,6 +3705,7 @@ int main() {
 
         const closeSandboxModal = () => {
           showSandboxModal.value = false;
+          showWatchPanel.value = false;
         };
 
         // 切換語言 (雙語言獨立草稿自動保存與切換)
@@ -3849,6 +3851,7 @@ int main() {
 
         // ✏️ 返回編輯模式
         const returnToSandboxEditor = () => {
+          showWatchPanel.value = false;
           sandboxMode.value = 'editor';
           sandboxError.value = null;
         };
