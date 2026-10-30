@@ -4388,11 +4388,24 @@ def __run_with_trace(user_code_str, stdin_str):
 
         // 取得當前除錯步驟的變數範疇 (根據沙盒或題庫除錯模式)
         const getCurrentWatchScope = () => {
-          if (showSandboxModal.value && sandboxMode.value === 'debug') {
+          // 1. 優先從已渲染的響應式變數清單直接提取（最即時、與變數表 100% 同步）
+          const activeList = showSandboxModal.value ? sandboxVariableList.value : variableList.value;
+          if (activeList && activeList.length > 0) {
+            const scope = {};
+            activeList.forEach(v => {
+              if (v && v.name) {
+                scope[v.name] = v.value;
+              }
+            });
+            return scope;
+          }
+
+          // 2. 備援：若清單尚未掛載，則從 step 物件提取
+          if (showSandboxModal.value) {
             if (sandboxCurrentStepIndex.value >= 0 && sandboxRecordedSteps.value[sandboxCurrentStepIndex.value]) {
               return sandboxRecordedSteps.value[sandboxCurrentStepIndex.value].variables || {};
             }
-          } else if (activeProblem.value && viewerMode.value === 'debug') {
+          } else {
             if (currentStepIndex.value >= 0 && recordedSteps.value[currentStepIndex.value]) {
               return recordedSteps.value[currentStepIndex.value].variables || {};
             }
