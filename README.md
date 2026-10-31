@@ -176,6 +176,8 @@ flowchart TD
 |---|---|---|
 | [`Code.gs`](file:///Users/lincube/Documents/show_code/Code.gs) | 後端控制層 (GAS) | 負責入口 `doGet()`、身分鑑權、快取、Sheets 欄位擴充 (含 Language 與 SourceCode)、圖片生命週期管理。 |
 | [`Index.html`](file:///Users/lincube/Documents/show_code/Index.html) | 前端表現層 (SPA) | 內含 HTML、Vue 3、Prism.js、Pyodide/JSCPP 雙語言逐步執行器、變數表矩陣渲染器、anti-OCR 圖片檢視器、自由練習沙盒雙模系統。 |
+| [`Code.gs.v3_sandbox`](file:///Users/lincube/Documents/show_code/Code.gs.v3_sandbox) | 歷史版本存檔 (v3.0) | 第三版自由練習沙盒與即時監看式穩定版本後端存檔。 |
+| [`Index.html.v3_sandbox`](file:///Users/lincube/Documents/show_code/Index.html.v3_sandbox) | 歷史版本存檔 (v3.0) | 第三版自由練習沙盒與即時監看式穩定版本前端存檔。 |
 | [`Code.gs.v2_debug`](file:///Users/lincube/Documents/show_code/Code.gs.v2_debug) | 歷史版本存檔 (v2.0) | 第二版題庫逐行除錯後端存檔。 |
 | [`Index.html.v2_debug`](file:///Users/lincube/Documents/show_code/Index.html.v2_debug) | 歷史版本存檔 (v2.0) | 第二版題庫逐行除錯前端存檔。 |
 | [`Code.gs.v1_image_only`](file:///Users/lincube/Documents/show_code/Code.gs.v1_image_only) | 歷史版本存檔 (v1.0) | 原始純圖片展示與管理後端（無原始碼欄位儲存）。 |
