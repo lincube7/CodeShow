@@ -651,7 +651,7 @@
           <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs shrink-0">
             <button
               type="button"
-              @click="viewerMode = 'image'; showWatchPanel = false"
+              @click="viewerMode = 'image'; showWatchPanel = false; stopAutoPlay()"
               :class="viewerMode === 'image' ? 'bg-indigo-600 text-white font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
               class="px-2.5 py-1 rounded-lg transition flex items-center gap-1">
               <span>🖼️</span> 圖片模式
@@ -814,17 +814,34 @@
                   v-for="(line, idx) in parsedCodeLines" 
                   :key="idx"
                   :class="[
-                    'exec-line flex items-start px-2 py-0.5 rounded transition-all duration-150',
+                    'exec-line group/line flex items-start px-2 py-0.5 rounded transition-all duration-150',
                     execError && execError.line === (idx + 1) ? 'exec-line-error' : '',
                     (!execError && currentExecutingLine === (idx + 1)) ? 'exec-line-active text-white font-semibold' : '',
-                    (hasExecutedLine(idx + 1) && currentExecutingLine !== (idx + 1) && !(execError && execError.line === (idx + 1))) ? 'exec-line-prev text-slate-300' : 'text-slate-400'
+                    (hasExecutedLine(idx + 1) && currentExecutingLine !== (idx + 1) && !(execError && execError.line === (idx + 1))) ? 'exec-line-prev text-slate-300' : 'text-slate-400',
+                    breakpoints.has(idx + 1) ? 'bg-rose-950/20' : ''
                   ]">
-                  <!-- 行號與箭頭指針 (頂部對齊以防長行折行時移位) -->
-                  <div class="w-12 shrink-0 flex items-center justify-between font-mono text-slate-500 text-[11px] pr-2 pt-0.5 select-none">
-                    <span class="text-red-400 font-bold"    v-if="execError && execError.line === (idx + 1)">💥</span>
-                    <span class="text-indigo-400 font-bold" v-else-if="currentExecutingLine === (idx + 1)">▶</span>
-                    <span v-else class="invisible">▶</span>
-                    <span>{{ idx + 1 }}</span>
+                  <!-- 行號與中斷點/指針熱區 (點擊切換中斷點) -->
+                  <div 
+                    @click="toggleBreakpoint(idx + 1)"
+                    :title="breakpoints.has(idx + 1) ? '點擊移除第 ' + (idx + 1) + ' 行中斷點' : '點擊設定第 ' + (idx + 1) + ' 行中斷點'"
+                    class="w-14 shrink-0 flex items-center justify-between font-mono text-[11px] pr-2 pt-0.5 select-none cursor-pointer hover:bg-slate-800/80 rounded-l transition-colors">
+                    
+                    <!-- 左側：中斷點圖示 / 懸停預覽 -->
+                    <span class="w-3 flex items-center justify-center shrink-0">
+                      <span v-if="breakpoints.has(idx + 1)" class="text-rose-500 font-black text-xs leading-none drop-shadow-[0_0_6px_rgba(244,63,94,0.6)]">●</span>
+                      <span v-else class="text-rose-400/50 opacity-0 group-hover/line:opacity-100 text-xs leading-none transition-opacity">○</span>
+                    </span>
+
+                    <!-- 中間：執行指針 ▶ / 出錯 💥 -->
+                    <span class="w-3 flex items-center justify-center shrink-0">
+                      <span class="text-red-400 font-bold" v-if="execError && execError.line === (idx + 1)">💥</span>
+                      <span class="text-indigo-400 font-bold text-[10px]" v-else-if="currentExecutingLine === (idx + 1)">▶</span>
+                    </span>
+
+                    <!-- 右側：行號數字 -->
+                    <span :class="breakpoints.has(idx + 1) ? 'text-rose-400 font-bold' : (currentExecutingLine === (idx + 1) ? 'text-indigo-300 font-bold' : 'text-slate-500 group-hover/line:text-slate-300')">
+                      {{ idx + 1 }}
+                    </span>
                   </div>
 
                   <!-- 該行內容 (支援自動換行與填空輸入框) -->
@@ -1127,59 +1144,120 @@
               </div>
             </div>
 
-            <!-- 控制按鈕群 (md:col-span-6，2×2 方格排版，告別細長條，比例勻稱好按) -->
+            <!-- 控制按鈕群 (md:col-span-6，2×3 六宮格排版，比例勻稱好按) -->
             <div class="md:col-span-6 flex flex-col gap-1.5 min-w-0 pl-0 md:pl-3">
-              <div class="flex items-center justify-between text-xs font-mono text-slate-400">
-                <span class="flex items-center gap-1">
+              <!-- 頂部資訊與控制列 (速度膠囊 + 清除中斷點 + 狀態) -->
+              <div class="flex items-center justify-between text-xs font-mono text-slate-400 gap-2 overflow-x-auto scrollbar-none pb-0.5">
+                <span class="flex items-center gap-1 shrink-0">
                   <span>🕹️</span> 步進控制(Controls):
                 </span>
-                <span class="text-[11px] text-slate-500">
-                  {{ execFinished ? '✓ 已執行結束' : (currentStepIndex >= 0 ? '逐步追蹤中' : '準備就緒') }}
+
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <!-- 三段速度微型切換膠囊 -->
+                  <div class="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[10px]">
+                    <button 
+                      type="button"
+                      @click="setAutoPlaySpeed(1500)"
+                      :class="autoPlaySpeed === 1500 ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+                      class="px-1.5 py-0.5 rounded transition"
+                      title="慢速播放 (1.5秒/步)">0.5x</button>
+                    <button 
+                      type="button"
+                      @click="setAutoPlaySpeed(800)"
+                      :class="autoPlaySpeed === 800 ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+                      class="px-1.5 py-0.5 rounded transition"
+                      title="標準速度 (0.8秒/步)">1x</button>
+                    <button 
+                      type="button"
+                      @click="setAutoPlaySpeed(300)"
+                      :class="autoPlaySpeed === 300 ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+                      class="px-1.5 py-0.5 rounded transition"
+                      title="快速播放 (0.3秒/步)">2x</button>
+                  </div>
+
+                  <!-- 清除中斷點按鈕 (僅在有中斷點時顯示) -->
+                  <button
+                    v-if="breakpoints.size > 0"
+                    type="button"
+                    @click="clearBreakpoints"
+                    class="text-[10px] text-rose-300 hover:text-white bg-rose-950/60 hover:bg-rose-900/80 px-2 py-0.5 rounded-lg border border-rose-500/40 flex items-center gap-1 transition active:scale-95 shadow-sm"
+                    title="清除所有已設定的中斷點">
+                    <span>🔴</span> 清除中斷點 ({{ breakpoints.size }})
+                  </button>
+                </div>
+
+                <span class="text-[11px] text-slate-500 shrink-0">
+                  {{ isAutoPlaying ? '⚡ 自動執行中...' : (execFinished ? '✓ 已執行結束' : (currentStepIndex >= 0 ? '逐步追蹤中' : '準備就緒')) }}
                 </span>
               </div>
 
-              <div class="grid grid-cols-2 gap-2.5 sm:gap-3 w-full h-[154px]">
-                <!-- 1. 🔁 重新開始 (左上) -->
+              <!-- 2×3 六宮格步進按鈕 -->
+              <div class="grid grid-cols-3 gap-2 sm:gap-2.5 w-full h-[154px]">
+                <!-- 1. 🔁 重新開始 (上左) -->
                 <button
                   type="button"
                   @click="resetExecution"
                   :disabled="execEngineLoading || currentStepIndex === -1"
-                  class="h-full rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition border border-slate-700/80 disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center gap-2.5 sm:gap-3 px-3 active:scale-95 shadow-md group select-none"
+                  class="h-full rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition border border-slate-700/80 disabled:opacity-30 disabled:pointer-events-none flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 active:scale-95 shadow-md group select-none"
                   title="回到第 1 列重新開始">
-                  <span class="text-2xl sm:text-3xl leading-none transition-transform group-hover:rotate-[-45deg]">🔁</span>
+                  <span class="text-xl sm:text-2xl leading-none transition-transform group-hover:rotate-[-45deg]">🔁</span>
                   <span class="text-xs sm:text-sm font-bold tracking-tight">重新開始</span>
                 </button>
 
-                <!-- 2. ◀ 上一步 (右上) -->
+                <!-- 2. ◀ 上一步 (上中) -->
                 <button
                   type="button"
                   @click="stepBackward"
                   :disabled="execEngineLoading || currentStepIndex <= 0"
-                  class="h-full rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition border border-slate-700/80 disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center gap-2.5 sm:gap-3 px-3 active:scale-95 shadow-md group select-none"
+                  class="h-full rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition border border-slate-700/80 disabled:opacity-30 disabled:pointer-events-none flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 active:scale-95 shadow-md group select-none"
                   title="回到上一步">
-                  <span class="text-2xl sm:text-3xl leading-none transition-transform group-hover:-translate-x-1">◀</span>
+                  <span class="text-xl sm:text-2xl leading-none transition-transform group-hover:-translate-x-1">◀</span>
                   <span class="text-xs sm:text-sm font-bold tracking-tight">上一步</span>
                 </button>
 
-                <!-- 3. ▶ 下一步 (左下：核心操作鍵，放大加強視覺吸引力) -->
+                <!-- 3. ⏯️ 自動執行 / ⏸️ 暫停執行 (上右) -->
+                <button
+                  type="button"
+                  @click="toggleAutoPlay"
+                  :disabled="execEngineLoading || (hasBlanks && !hasFilledAllBlanks)"
+                  :class="isAutoPlaying ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/30 border-amber-400/50 animate-pulse' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700/80'"
+                  class="h-full rounded-2xl transition border disabled:opacity-30 disabled:pointer-events-none flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 active:scale-95 shadow-md group select-none"
+                  :title="isAutoPlaying ? '暫停自動執行' : '按設定速度自動步進執行'">
+                  <span class="text-xl sm:text-2xl leading-none">{{ isAutoPlaying ? '⏸️' : '⏯️' }}</span>
+                  <span class="text-xs sm:text-sm font-bold tracking-tight">{{ isAutoPlaying ? '暫停執行' : '自動執行' }}</span>
+                </button>
+
+                <!-- 4. ▶ 下一步 (下左：核心單步鍵) -->
                 <button
                   type="button"
                   @click="stepForward"
                   :disabled="execEngineLoading || execFinished || (hasBlanks && !hasFilledAllBlanks)"
-                  class="h-full rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-xl shadow-indigo-600/35 border border-indigo-400/40 ring-2 ring-indigo-500/20 disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center gap-2.5 sm:gap-3 px-3 active:scale-95 group select-none"
-                  title="執行下一步">
-                  <span class="text-2xl sm:text-3xl leading-none transition-transform group-hover:translate-x-1">▶</span>
+                  class="h-full rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-xl shadow-indigo-600/35 border border-indigo-400/40 ring-1 ring-indigo-500/20 disabled:opacity-30 disabled:pointer-events-none flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 active:scale-95 group select-none"
+                  title="單步前進一行">
+                  <span class="text-xl sm:text-2xl leading-none transition-transform group-hover:translate-x-1">▶</span>
                   <span class="text-xs sm:text-sm font-black tracking-wide">下一步</span>
                 </button>
 
-                <!-- 4. ⏩ 執行到底 (右下) -->
+                <!-- 5. 🎯 執行到中斷點 (下中) -->
+                <button
+                  type="button"
+                  @click="runToBreakpoint"
+                  :disabled="execEngineLoading || execFinished || (hasBlanks && !hasFilledAllBlanks)"
+                  :class="breakpoints.size > 0 ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30 border-rose-400/40' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700/80'"
+                  class="h-full rounded-2xl transition shadow-md border disabled:opacity-30 disabled:pointer-events-none flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 active:scale-95 group select-none"
+                  title="直接前進至下一個中斷點行">
+                  <span class="text-xl sm:text-2xl leading-none transition-transform group-hover:scale-110">🎯</span>
+                  <span class="text-xs sm:text-sm font-bold tracking-tight">到中斷點</span>
+                </button>
+
+                <!-- 6. ⏩ 執行到底 (下右) -->
                 <button
                   type="button"
                   @click="runToBottom"
                   :disabled="execEngineLoading || execFinished || (hasBlanks && !hasFilledAllBlanks)"
-                  class="h-full rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xl shadow-emerald-600/35 border border-emerald-400/40 ring-2 ring-emerald-500/20 disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center gap-2.5 sm:gap-3 px-3 active:scale-95 group select-none"
-                  title="直接執行至結束">
-                  <span class="text-2xl sm:text-3xl leading-none transition-transform group-hover:translate-x-1">⏩</span>
+                  class="h-full rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xl shadow-emerald-600/35 border border-emerald-400/40 ring-1 ring-emerald-500/20 disabled:opacity-30 disabled:pointer-events-none flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 active:scale-95 group select-none"
+                  title="直接執行至程式結束">
+                  <span class="text-xl sm:text-2xl leading-none transition-transform group-hover:translate-x-1">⏩</span>
                   <span class="text-xs sm:text-sm font-bold tracking-tight">執行到底</span>
                 </button>
               </div>
@@ -1691,17 +1769,34 @@
                   v-for="(line, idx) in sandboxParsedCodeLines" 
                   :key="idx"
                   :class="[
-                    'exec-line flex items-start px-2 py-0.5 rounded transition-all duration-150',
+                    'exec-line group/line flex items-start px-2 py-0.5 rounded transition-all duration-150',
                     sandboxError && sandboxError.line === (idx + 1) ? 'exec-line-error' : '',
                     (!sandboxError && sandboxCurrentExecutingLine === (idx + 1)) ? 'exec-line-active text-white font-semibold' : '',
-                    (hasSandboxExecutedLine(idx + 1) && sandboxCurrentExecutingLine !== (idx + 1) && !(sandboxError && sandboxError.line === (idx + 1))) ? 'exec-line-prev text-slate-300' : 'text-slate-400'
+                    (hasSandboxExecutedLine(idx + 1) && sandboxCurrentExecutingLine !== (idx + 1) && !(sandboxError && sandboxError.line === (idx + 1))) ? 'exec-line-prev text-slate-300' : 'text-slate-400',
+                    sandboxBreakpoints.has(idx + 1) ? 'bg-rose-950/20' : ''
                   ]">
-                  <!-- 行號與箭頭指針 -->
-                  <div class="w-12 shrink-0 flex items-center justify-between font-mono text-slate-500 text-[11px] pr-2 pt-0.5 select-none">
-                    <span class="text-red-400 font-bold"    v-if="sandboxError && sandboxError.line === (idx + 1)">💥</span>
-                    <span class="text-indigo-400 font-bold" v-else-if="sandboxCurrentExecutingLine === (idx + 1)">▶</span>
-                    <span v-else class="invisible">▶</span>
-                    <span>{{ idx + 1 }}</span>
+                  <!-- 行號與中斷點/指針熱區 (點擊切換中斷點) -->
+                  <div 
+                    @click="toggleSandboxBreakpoint(idx + 1)"
+                    :title="sandboxBreakpoints.has(idx + 1) ? '點擊移除第 ' + (idx + 1) + ' 行中斷點' : '點擊設定第 ' + (idx + 1) + ' 行中斷點'"
+                    class="w-14 shrink-0 flex items-center justify-between font-mono text-[11px] pr-2 pt-0.5 select-none cursor-pointer hover:bg-slate-800/80 rounded-l transition-colors">
+                    
+                    <!-- 左側：中斷點圖示 / 懸停預覽 -->
+                    <span class="w-3 flex items-center justify-center shrink-0">
+                      <span v-if="sandboxBreakpoints.has(idx + 1)" class="text-rose-500 font-black text-xs leading-none drop-shadow-[0_0_6px_rgba(244,63,94,0.6)]">●</span>
+                      <span v-else class="text-rose-400/50 opacity-0 group-hover/line:opacity-100 text-xs leading-none transition-opacity">○</span>
+                    </span>
+
+                    <!-- 中間：執行指針 ▶ / 出錯 💥 -->
+                    <span class="w-3 flex items-center justify-center shrink-0">
+                      <span class="text-red-400 font-bold" v-if="sandboxError && sandboxError.line === (idx + 1)">💥</span>
+                      <span class="text-indigo-400 font-bold text-[10px]" v-else-if="sandboxCurrentExecutingLine === (idx + 1)">▶</span>
+                    </span>
+
+                    <!-- 右側：行號數字 -->
+                    <span :class="sandboxBreakpoints.has(idx + 1) ? 'text-rose-400 font-bold' : (sandboxCurrentExecutingLine === (idx + 1) ? 'text-indigo-300 font-bold' : 'text-slate-500 group-hover/line:text-slate-300')">
+                      {{ idx + 1 }}
+                    </span>
                   </div>
 
                   <!-- 程式碼內容 -->
@@ -2027,16 +2122,53 @@
 
             <!-- ========== 右下：控制按鈕群 (等高 154px，與左側精準對齊) ========== -->
             <div class="md:col-span-6 flex flex-col gap-1.5 min-w-0 pl-0 md:pl-3">
-              <div class="flex items-center justify-between text-xs font-mono text-slate-400">
-                <span class="flex items-center gap-1">
+              <!-- 頂部資訊與控制列 (速度膠囊 + 清除中斷點 + 狀態) -->
+              <div class="flex items-center justify-between text-xs font-mono text-slate-400 gap-2 overflow-x-auto scrollbar-none pb-0.5">
+                <span class="flex items-center gap-1 shrink-0">
                   <span>🕹️</span> {{ sandboxMode === 'editor' ? '執行動作(Actions):' : '步進控制(Controls):' }}
                 </span>
-                <span class="text-[11px] text-slate-500">
+
+                <!-- 僅在除錯模式顯示速度與清除中斷點 -->
+                <div v-if="sandboxMode === 'debug'" class="flex items-center gap-1.5 shrink-0">
+                  <!-- 三段速度微型切換膠囊 -->
+                  <div class="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[10px]">
+                    <button 
+                      type="button"
+                      @click="setAutoPlaySpeed(1500)"
+                      :class="autoPlaySpeed === 1500 ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+                      class="px-1.5 py-0.5 rounded transition"
+                      title="慢速播放 (1.5秒/步)">0.5x</button>
+                    <button 
+                      type="button"
+                      @click="setAutoPlaySpeed(800)"
+                      :class="autoPlaySpeed === 800 ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+                      class="px-1.5 py-0.5 rounded transition"
+                      title="標準速度 (0.8秒/步)">1x</button>
+                    <button 
+                      type="button"
+                      @click="setAutoPlaySpeed(300)"
+                      :class="autoPlaySpeed === 300 ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+                      class="px-1.5 py-0.5 rounded transition"
+                      title="快速播放 (0.3秒/步)">2x</button>
+                  </div>
+
+                  <!-- 清除中斷點按鈕 (僅在有中斷點時顯示) -->
+                  <button
+                    v-if="sandboxBreakpoints.size > 0"
+                    type="button"
+                    @click="clearSandboxBreakpoints"
+                    class="text-[10px] text-rose-300 hover:text-white bg-rose-950/60 hover:bg-rose-900/80 px-2 py-0.5 rounded-lg border border-rose-500/40 flex items-center gap-1 transition active:scale-95 shadow-sm"
+                    title="清除所有已設定的中斷點">
+                    <span>🔴</span> 清除中斷點 ({{ sandboxBreakpoints.size }})
+                  </button>
+                </div>
+
+                <span class="text-[11px] text-slate-500 shrink-0">
                   <template v-if="sandboxMode === 'editor'">
                     {{ sandboxExecuting ? '⏳ 執行中...' : '準備就緒' }}
                   </template>
                   <template v-else>
-                    {{ sandboxExecFinished ? '✓ 已執行結束' : '逐步追蹤中' }}
+                    {{ sandboxIsAutoPlaying ? '⚡ 自動執行中...' : (sandboxExecFinished ? '✓ 已執行結束' : '逐步追蹤中') }}
                   </template>
                 </span>
               </div>
@@ -2066,49 +2198,73 @@
                 </button>
               </div>
 
-              <!-- 按鈕組合 B: 逐行除錯模式 (2×2 勻稱步進控制鍵) -->
-              <div v-else class="grid grid-cols-2 gap-2.5 sm:gap-3 w-full h-[154px]">
-                <!-- 1. 🔁 重新開始 (左上) -->
+              <!-- 按鈕組合 B: 逐行除錯模式 (2×3 六宮格步進控制鍵) -->
+              <div v-else class="grid grid-cols-3 gap-2 sm:gap-2.5 w-full h-[154px]">
+                <!-- 1. 🔁 重新開始 (上左) -->
                 <button
                   type="button"
                   @click="resetSandboxExecution"
                   :disabled="sandboxExecuting || sandboxCurrentStepIndex === -1"
-                  class="h-full rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition border border-slate-700/80 disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center gap-2.5 sm:gap-3 px-3 active:scale-95 shadow-md group select-none"
+                  class="h-full rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition border border-slate-700/80 disabled:opacity-30 disabled:pointer-events-none flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 active:scale-95 shadow-md group select-none"
                   title="回到第 1 列重新開始">
-                  <span class="text-2xl sm:text-3xl leading-none transition-transform group-hover:rotate-[-45deg]">🔁</span>
+                  <span class="text-xl sm:text-2xl leading-none transition-transform group-hover:rotate-[-45deg]">🔁</span>
                   <span class="text-xs sm:text-sm font-bold tracking-tight">重新開始</span>
                 </button>
 
-                <!-- 2. ◀ 上一步 (右上) -->
+                <!-- 2. ◀ 上一步 (上中) -->
                 <button
                   type="button"
                   @click="stepBackwardSandbox"
                   :disabled="sandboxExecuting || sandboxCurrentStepIndex <= 0"
-                  class="h-full rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition border border-slate-700/80 disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center gap-2.5 sm:gap-3 px-3 active:scale-95 shadow-md group select-none"
+                  class="h-full rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition border border-slate-700/80 disabled:opacity-30 disabled:pointer-events-none flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 active:scale-95 shadow-md group select-none"
                   title="回到上一步">
-                  <span class="text-2xl sm:text-3xl leading-none transition-transform group-hover:-translate-x-1">◀</span>
+                  <span class="text-xl sm:text-2xl leading-none transition-transform group-hover:-translate-x-1">◀</span>
                   <span class="text-xs sm:text-sm font-bold tracking-tight">上一步</span>
                 </button>
 
-                <!-- 3. ▶ 下一步 (左下：核心操作鍵) -->
+                <!-- 3. ⏯️ 自動執行 / ⏸️ 暫停執行 (上右) -->
+                <button
+                  type="button"
+                  @click="toggleSandboxAutoPlay"
+                  :disabled="sandboxExecuting"
+                  :class="sandboxIsAutoPlaying ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/30 border-amber-400/50 animate-pulse' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700/80'"
+                  class="h-full rounded-2xl transition border disabled:opacity-30 disabled:pointer-events-none flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 active:scale-95 shadow-md group select-none"
+                  :title="sandboxIsAutoPlaying ? '暫停自動執行' : '按設定速度自動步進執行'">
+                  <span class="text-xl sm:text-2xl leading-none">{{ sandboxIsAutoPlaying ? '⏸️' : '⏯️' }}</span>
+                  <span class="text-xs sm:text-sm font-bold tracking-tight">{{ sandboxIsAutoPlaying ? '暫停執行' : '自動執行' }}</span>
+                </button>
+
+                <!-- 4. ▶ 下一步 (下左：核心單步鍵) -->
                 <button
                   type="button"
                   @click="stepForwardSandbox"
                   :disabled="sandboxExecuting || sandboxExecFinished"
-                  class="h-full rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-xl shadow-indigo-600/35 border border-indigo-400/40 ring-2 ring-indigo-500/20 disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center gap-2.5 sm:gap-3 px-3 active:scale-95 group select-none"
-                  title="執行下一步">
-                  <span class="text-2xl sm:text-3xl leading-none transition-transform group-hover:translate-x-1">▶</span>
+                  class="h-full rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-xl shadow-indigo-600/35 border border-indigo-400/40 ring-1 ring-indigo-500/20 disabled:opacity-30 disabled:pointer-events-none flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 active:scale-95 group select-none"
+                  title="單步前進一行">
+                  <span class="text-xl sm:text-2xl leading-none transition-transform group-hover:translate-x-1">▶</span>
                   <span class="text-xs sm:text-sm font-black tracking-wide">下一步</span>
                 </button>
 
-                <!-- 4. ⏩ 執行到底 (右下) -->
+                <!-- 5. 🎯 執行到中斷點 (下中) -->
+                <button
+                  type="button"
+                  @click="runToBreakpointSandbox"
+                  :disabled="sandboxExecuting || sandboxExecFinished"
+                  :class="sandboxBreakpoints.size > 0 ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30 border-rose-400/40' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700/80'"
+                  class="h-full rounded-2xl transition shadow-md border disabled:opacity-30 disabled:pointer-events-none flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 active:scale-95 group select-none"
+                  title="直接前進至下一個中斷點行">
+                  <span class="text-xl sm:text-2xl leading-none transition-transform group-hover:scale-110">🎯</span>
+                  <span class="text-xs sm:text-sm font-bold tracking-tight">到中斷點</span>
+                </button>
+
+                <!-- 6. ⏩ 執行到底 (下右) -->
                 <button
                   type="button"
                   @click="runToBottomSandbox"
                   :disabled="sandboxExecuting || sandboxExecFinished"
-                  class="h-full rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xl shadow-emerald-600/35 border border-emerald-400/40 ring-2 ring-emerald-500/20 disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center gap-2.5 sm:gap-3 px-3 active:scale-95 group select-none"
-                  title="直接執行至結束">
-                  <span class="text-2xl sm:text-3xl leading-none transition-transform group-hover:translate-x-1">⏩</span>
+                  class="h-full rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xl shadow-emerald-600/35 border border-emerald-400/40 ring-1 ring-emerald-500/20 disabled:opacity-30 disabled:pointer-events-none flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-2 active:scale-95 group select-none"
+                  title="直接執行至程式結束">
+                  <span class="text-xl sm:text-2xl leading-none transition-transform group-hover:translate-x-1">⏩</span>
                   <span class="text-xs sm:text-sm font-bold tracking-tight">執行到底</span>
                 </button>
               </div>
@@ -2287,6 +2443,19 @@
         });
         const currentOutput = ref('');
         const codeWrapEnabled = ref(true);
+
+        // 中斷點 (Breakpoints) 與自動執行 (Auto-Play) 狀態
+        const breakpoints = ref(new Set());
+        const isAutoPlaying = ref(false);
+        let autoPlayTimer = null;
+        const autoPlaySpeed = ref(800); // 預設 800ms (1x)
+
+        try {
+          const savedSpeed = parseInt(localStorage.getItem('codeshow_autoplay_speed'), 10);
+          if ([1500, 800, 300].includes(savedSpeed)) {
+            autoPlaySpeed.value = savedSpeed;
+          }
+        } catch (_) {}
 
         // 格式化標準輸出（標示最新一行輸出並保留排版換行）
         const formattedOutputLines = computed(() => {
@@ -2815,6 +2984,9 @@ print("Result:", calculate_sum(10))`
 
         // 圖片預覽彈窗 (手勢說明預設不主動彈出，需使用者點擊「💡 手勢說明」才顯示)
         const openImageModal = (prob) => {
+          stopAutoPlay();
+          breakpoints.value.clear();
+          breakpoints.value = new Set();
           resetZoom();
           isImgLoading.value = true;
           showGestureHint.value = false;
@@ -2823,6 +2995,9 @@ print("Result:", calculate_sum(10))`
           initExecutionState(prob);
         };
         const closeImageModal = () => {
+          stopAutoPlay();
+          breakpoints.value.clear();
+          breakpoints.value = new Set();
           showWatchPanel.value = false;
           activeProblem.value = null;
           showGestureHint.value = false;
@@ -3487,6 +3662,7 @@ def __run_with_trace(user_code_str, stdin_str):
 
         // 控制按鈕動作：下一步
         const stepForward = async () => {
+          stopAutoPlay();
           if (recordedSteps.value.length === 0) {
             const ok = await prepareExecutionTrace();
             if (!ok || recordedSteps.value.length === 0) return;
@@ -3501,6 +3677,7 @@ def __run_with_trace(user_code_str, stdin_str):
 
         // 控制按鈕動作：上一步
         const stepBackward = () => {
+          stopAutoPlay();
           if (currentStepIndex.value > 0) {
             applyStep(currentStepIndex.value - 1);
           }
@@ -3508,6 +3685,7 @@ def __run_with_trace(user_code_str, stdin_str):
 
         // 控制按鈕動作：重新開始 (回到第一列)
         const resetExecution = () => {
+          stopAutoPlay();
           execError.value = null;
           currentStdinLine.value = 0;
           if (stdinScrollRef.value) {
@@ -3526,12 +3704,145 @@ def __run_with_trace(user_code_str, stdin_str):
 
         // 控制按鈕動作：⏩ 執行到底
         const runToBottom = async () => {
+          stopAutoPlay();
           if (recordedSteps.value.length === 0) {
             const ok = await prepareExecutionTrace();
             if (!ok || recordedSteps.value.length === 0) return;
           }
           applyStep(recordedSteps.value.length - 1, true); // scrollToTop=true → stdout 置頂，從頭對答案
           showToast("已執行至程式結束！");
+        };
+
+        // ==================== 題庫中斷點 (Breakpoints) 系統 ====================
+        const toggleBreakpoint = (lineNo) => {
+          if (breakpoints.value.has(lineNo)) {
+            breakpoints.value.delete(lineNo);
+            showToast(`已移除第 ${lineNo} 行中斷點`);
+          } else {
+            breakpoints.value.add(lineNo);
+            showToast(`已在第 ${lineNo} 行設定中斷點`);
+          }
+          breakpoints.value = new Set(breakpoints.value);
+        };
+
+        const clearBreakpoints = () => {
+          breakpoints.value.clear();
+          breakpoints.value = new Set();
+          showToast("已清除所有中斷點");
+        };
+
+        // 🎯 執行到中斷點
+        const runToBreakpoint = async () => {
+          stopAutoPlay();
+          if (recordedSteps.value.length === 0) {
+            const ok = await prepareExecutionTrace();
+            if (!ok || recordedSteps.value.length === 0) return;
+          }
+          if (execFinished.value || currentStepIndex.value >= recordedSteps.value.length - 1) {
+            showToast("程式已執行結束，請先按重新開始！");
+            return;
+          }
+
+          // 從當前步驟 + 1 開始往後搜尋第一個命中的中斷點
+          const startIdx = Math.max(0, currentStepIndex.value + 1);
+          let targetStepIdx = -1;
+          for (let i = startIdx; i < recordedSteps.value.length; i++) {
+            const step = recordedSteps.value[i];
+            if (step && breakpoints.value.has(step.line)) {
+              targetStepIdx = i;
+              break;
+            }
+          }
+
+          if (targetStepIdx !== -1) {
+            applyStep(targetStepIdx);
+            const hitLine = recordedSteps.value[targetStepIdx]?.line;
+            showToast(`🎯 已暫停於第 ${hitLine} 行中斷點`);
+          } else {
+            // 後續無中斷點，直接執行到底
+            applyStep(recordedSteps.value.length - 1, true);
+            if (breakpoints.value.size > 0) {
+              showToast("後續無經過中斷點，已執行至結束！");
+            } else {
+              showToast("未設定中斷點，已執行至程式結束！");
+            }
+          }
+        };
+
+        // ==================== 題庫自動執行 (Auto-Play) 系統 ====================
+        const setAutoPlaySpeed = (speed) => {
+          autoPlaySpeed.value = speed;
+          try {
+            localStorage.setItem('codeshow_autoplay_speed', speed.toString());
+          } catch (_) {}
+          if (isAutoPlaying.value) {
+            stopAutoPlay();
+            startAutoPlay();
+          }
+          if (sandboxIsAutoPlaying.value) {
+            stopSandboxAutoPlay();
+            startSandboxAutoPlay();
+          }
+        };
+
+        const stopAutoPlay = () => {
+          if (autoPlayTimer) {
+            clearInterval(autoPlayTimer);
+            autoPlayTimer = null;
+          }
+          isAutoPlaying.value = false;
+        };
+
+        const startAutoPlay = () => {
+          stopAutoPlay();
+          isAutoPlaying.value = true;
+          autoPlayTimer = setInterval(async () => {
+            if (recordedSteps.value.length === 0) {
+              const ok = await prepareExecutionTrace();
+              if (!ok || recordedSteps.value.length === 0) {
+                stopAutoPlay();
+                return;
+              }
+            }
+            if (currentStepIndex.value >= recordedSteps.value.length - 1) {
+              execFinished.value = true;
+              stopAutoPlay();
+              showToast("已執行至程式結束！");
+              return;
+            }
+
+            const nextIdx = currentStepIndex.value + 1;
+            applyStep(nextIdx);
+
+            const currLine = recordedSteps.value[nextIdx]?.line;
+            if (currLine && breakpoints.value.has(currLine)) {
+              stopAutoPlay();
+              showToast(`🎯 已暫停於第 ${currLine} 行中斷點`);
+              return;
+            }
+
+            if (nextIdx >= recordedSteps.value.length - 1) {
+              execFinished.value = true;
+              stopAutoPlay();
+              showToast("已執行至最後一行！");
+            }
+          }, autoPlaySpeed.value);
+        };
+
+        const toggleAutoPlay = async () => {
+          if (isAutoPlaying.value) {
+            stopAutoPlay();
+            showToast("已暫停自動執行");
+            return;
+          }
+          if (recordedSteps.value.length === 0) {
+            const ok = await prepareExecutionTrace();
+            if (!ok || recordedSteps.value.length === 0) return;
+          }
+          if (execFinished.value || currentStepIndex.value >= recordedSteps.value.length - 1) {
+            resetExecution();
+          }
+          startAutoPlay();
         };
 
         // 輔助檢查行是否已執行過
@@ -3568,6 +3879,9 @@ def __run_with_trace(user_code_str, stdin_str):
         const sandboxExecuting = ref(false);
         const sandboxError = ref(null);
         const sandboxStdout = ref('');
+        const sandboxBreakpoints = ref(new Set());
+        const sandboxIsAutoPlaying = ref(false);
+        let sandboxAutoPlayTimer = null;
 
         const DEFAULT_PYTHON_SANDBOX_CODE = `# 自由練習沙盒 - Python 模式
 # 您可以在此隨堂練習、修改程式碼並測試輸出
@@ -3705,6 +4019,9 @@ int main() {
         };
 
         const closeSandboxModal = () => {
+          stopSandboxAutoPlay();
+          sandboxBreakpoints.value.clear();
+          sandboxBreakpoints.value = new Set();
           showSandboxModal.value = false;
           showWatchPanel.value = false;
         };
@@ -3852,6 +4169,9 @@ int main() {
 
         // ✏️ 返回編輯模式
         const returnToSandboxEditor = () => {
+          stopSandboxAutoPlay();
+          sandboxBreakpoints.value.clear();
+          sandboxBreakpoints.value = new Set();
           showWatchPanel.value = false;
           sandboxMode.value = 'editor';
           sandboxError.value = null;
@@ -4211,6 +4531,7 @@ def __run_with_trace(user_code_str, stdin_str):
 
         // 步進按鈕動作：下一步
         const stepForwardSandbox = () => {
+          stopSandboxAutoPlay();
           if (sandboxCurrentStepIndex.value < sandboxRecordedSteps.value.length - 1) {
             applySandboxStep(sandboxCurrentStepIndex.value + 1);
           } else {
@@ -4221,6 +4542,7 @@ def __run_with_trace(user_code_str, stdin_str):
 
         // 步進按鈕動作：上一步
         const stepBackwardSandbox = () => {
+          stopSandboxAutoPlay();
           if (sandboxCurrentStepIndex.value > 0) {
             applySandboxStep(sandboxCurrentStepIndex.value - 1);
           }
@@ -4228,6 +4550,7 @@ def __run_with_trace(user_code_str, stdin_str):
 
         // 步進按鈕動作：重新開始
         const resetSandboxExecution = () => {
+          stopSandboxAutoPlay();
           sandboxError.value = null;
           sandboxCurrentStdinLine.value = 0;
           if (sandboxStdinScrollRef.value) {
@@ -4246,10 +4569,113 @@ def __run_with_trace(user_code_str, stdin_str):
 
         // 步進按鈕動作：執行到底
         const runToBottomSandbox = () => {
+          stopSandboxAutoPlay();
           if (sandboxRecordedSteps.value.length > 0) {
             applySandboxStep(sandboxRecordedSteps.value.length - 1, true);
             showToast("已執行至程式結束！");
           }
+        };
+
+        // ==================== 沙盒中斷點 (Breakpoints) 系統 ====================
+        const toggleSandboxBreakpoint = (lineNo) => {
+          if (sandboxBreakpoints.value.has(lineNo)) {
+            sandboxBreakpoints.value.delete(lineNo);
+            showToast(`已移除第 ${lineNo} 行中斷點`);
+          } else {
+            sandboxBreakpoints.value.add(lineNo);
+            showToast(`已在第 ${lineNo} 行設定中斷點`);
+          }
+          sandboxBreakpoints.value = new Set(sandboxBreakpoints.value);
+        };
+
+        const clearSandboxBreakpoints = () => {
+          sandboxBreakpoints.value.clear();
+          sandboxBreakpoints.value = new Set();
+          showToast("已清除所有中斷點");
+        };
+
+        // 🎯 沙盒執行到中斷點
+        const runToBreakpointSandbox = () => {
+          stopSandboxAutoPlay();
+          if (sandboxRecordedSteps.value.length === 0) return;
+          if (sandboxExecFinished.value || sandboxCurrentStepIndex.value >= sandboxRecordedSteps.value.length - 1) {
+            showToast("程式已執行結束，請先按重新開始！");
+            return;
+          }
+
+          const startIdx = Math.max(0, sandboxCurrentStepIndex.value + 1);
+          let targetStepIdx = -1;
+          for (let i = startIdx; i < sandboxRecordedSteps.value.length; i++) {
+            const step = sandboxRecordedSteps.value[i];
+            if (step && sandboxBreakpoints.value.has(step.line)) {
+              targetStepIdx = i;
+              break;
+            }
+          }
+
+          if (targetStepIdx !== -1) {
+            applySandboxStep(targetStepIdx);
+            const hitLine = sandboxRecordedSteps.value[targetStepIdx]?.line;
+            showToast(`🎯 已暫停於第 ${hitLine} 行中斷點`);
+          } else {
+            applySandboxStep(sandboxRecordedSteps.value.length - 1, true);
+            if (sandboxBreakpoints.value.size > 0) {
+              showToast("後續無經過中斷點，已執行至結束！");
+            } else {
+              showToast("未設定中斷點，已執行至程式結束！");
+            }
+          }
+        };
+
+        // ==================== 沙盒自動執行 (Auto-Play) 系統 ====================
+        const stopSandboxAutoPlay = () => {
+          if (sandboxAutoPlayTimer) {
+            clearInterval(sandboxAutoPlayTimer);
+            sandboxAutoPlayTimer = null;
+          }
+          sandboxIsAutoPlaying.value = false;
+        };
+
+        const startSandboxAutoPlay = () => {
+          stopSandboxAutoPlay();
+          sandboxIsAutoPlaying.value = true;
+          sandboxAutoPlayTimer = setInterval(() => {
+            if (sandboxCurrentStepIndex.value >= sandboxRecordedSteps.value.length - 1) {
+              sandboxExecFinished.value = true;
+              stopSandboxAutoPlay();
+              showToast("已執行至程式結束！");
+              return;
+            }
+
+            const nextIdx = sandboxCurrentStepIndex.value + 1;
+            applySandboxStep(nextIdx);
+
+            const currLine = sandboxRecordedSteps.value[nextIdx]?.line;
+            if (currLine && sandboxBreakpoints.value.has(currLine)) {
+              stopSandboxAutoPlay();
+              showToast(`🎯 已暫停於第 ${currLine} 行中斷點`);
+              return;
+            }
+
+            if (nextIdx >= sandboxRecordedSteps.value.length - 1) {
+              sandboxExecFinished.value = true;
+              stopSandboxAutoPlay();
+              showToast("已執行至最後一行！");
+            }
+          }, autoPlaySpeed.value);
+        };
+
+        const toggleSandboxAutoPlay = () => {
+          if (sandboxIsAutoPlaying.value) {
+            stopSandboxAutoPlay();
+            showToast("已暫停自動執行");
+            return;
+          }
+          if (sandboxRecordedSteps.value.length === 0) return;
+          if (sandboxExecFinished.value || sandboxCurrentStepIndex.value >= sandboxRecordedSteps.value.length - 1) {
+            resetSandboxExecution();
+          }
+          startSandboxAutoPlay();
         };
 
         // 輔助函式：檢查行是否已執行過
@@ -4945,6 +5371,15 @@ def __run_with_trace(user_code_str, stdin_str):
           stepBackward,
           stepForward,
           runToBottom,
+          runToBreakpoint,
+          breakpoints,
+          toggleBreakpoint,
+          clearBreakpoints,
+          isAutoPlaying,
+          toggleAutoPlay,
+          stopAutoPlay,
+          autoPlaySpeed,
+          setAutoPlaySpeed,
           codeScrollRef,
           varScrollRef,
           stdinScrollRef,
@@ -4996,6 +5431,13 @@ def __run_with_trace(user_code_str, stdin_str):
           stepBackwardSandbox,
           resetSandboxExecution,
           runToBottomSandbox,
+          runToBreakpointSandbox,
+          sandboxBreakpoints,
+          toggleSandboxBreakpoint,
+          clearSandboxBreakpoints,
+          sandboxIsAutoPlaying,
+          toggleSandboxAutoPlay,
+          stopSandboxAutoPlay,
           hasSandboxExecutedLine,
           isSandboxCellChanged,
           isSandbox2DCellChanged,
