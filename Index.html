@@ -1753,6 +1753,7 @@
                   @input="onSandboxCodeInput"
                   @scroll="syncSandboxEditorScroll"
                   @keydown.tab.prevent="handleSandboxTab"
+                  @keydown.enter.prevent="handleSandboxEnter"
                   spellcheck="false"
                   placeholder="請在此輸入或貼上您的程式碼..."
                   :class="sandboxWrapEnabled ? 'whitespace-pre-wrap break-words' : 'whitespace-pre overflow-x-auto'"
@@ -4076,6 +4077,82 @@ int main() {
           onSandboxCodeInput();
         };
 
+        // 編輯器 Enter 鍵智慧自動縮排 (Auto-indent, Python ':' 與 C++ '{' 1TBS 規範)
+        const handleSandboxEnter = (e) => {
+          const textarea = e.target;
+          if (!textarea) return;
+          const start = textarea.selectionStart;
+          const end = textarea.selectionEnd;
+          const val = textarea.value;
+
+          // 1. 取得游標前最後一行的文字 (當前行游標前半段)
+          const textBeforeCursor = val.substring(0, start);
+          const textAfterCursor = val.substring(end);
+          const lastNewlineIndex = textBeforeCursor.lastIndexOf('\n');
+          const currentLineBefore = lastNewlineIndex === -1 ? textBeforeCursor : textBeforeCursor.substring(lastNewlineIndex + 1);
+
+          // 2. 取得當前行的基礎縮排 (前置空白字元)
+          const indentMatch = currentLineBefore.match(/^[\t ]*/);
+          const baseIndent = indentMatch ? indentMatch[0] : '';
+
+          // 3. 取得當前行移除單行註解後的有效程式碼文字，並 trimRight
+          let cleanLine = currentLineBefore;
+          const lang = sandboxLang.value;
+          if (lang === 'python') {
+            const commentIdx = cleanLine.indexOf('#');
+            if (commentIdx !== -1) cleanLine = cleanLine.substring(0, commentIdx);
+          } else if (lang === 'cpp') {
+            const commentIdx = cleanLine.indexOf('//');
+            if (commentIdx !== -1) cleanLine = cleanLine.substring(0, commentIdx);
+          }
+          const trimmedCode = cleanLine.trimEnd();
+
+          let insertText = '\n' + baseIndent;
+          let newCursorOffset = insertText.length;
+
+          // 4. 判斷特殊語法符號 (Python ':' 或 C++ '{' 1TBS 規範)
+          if (lang === 'python' && trimmedCode.endsWith(':')) {
+            // Python: ':' 結尾加縮排 4 格
+            insertText = '\n' + baseIndent + '    ';
+            newCursorOffset = insertText.length;
+          } else if (lang === 'cpp' && trimmedCode.endsWith('{')) {
+            // C++: '{' 結尾遵循 1TBS 規範，換行縮排 4 格，下 2 行補 '}'
+            const nextTrimmedChar = textAfterCursor.trimStart()[0];
+            if (nextTrimmedChar === '}') {
+              // 游標後方已有 '}'，不重複補 '}'，而是將後方 '}' 推至下一行對齊
+              const closingIndent = '\n' + baseIndent;
+              insertText = '\n' + baseIndent + '    ';
+              newCursorOffset = insertText.length;
+              const afterMatch = textAfterCursor.match(/^[\t ]*\}/);
+              if (afterMatch) {
+                const restAfter = textAfterCursor.substring(afterMatch[0].length);
+                textarea.value = textBeforeCursor + insertText + closingIndent + '}' + restAfter;
+                textarea.selectionStart = textarea.selectionEnd = start + newCursorOffset;
+                sandboxCode.value = textarea.value;
+                onSandboxCodeInput();
+                return;
+              }
+            } else {
+              // 游標後無 '}'，自動在下 2 行補上閉合的 '}'
+              const nextLineIndent = '\n' + baseIndent + '    ';
+              const closingIndent = '\n' + baseIndent + '}';
+              insertText = nextLineIndent;
+              newCursorOffset = insertText.length;
+              textarea.value = textBeforeCursor + nextLineIndent + closingIndent + textAfterCursor;
+              textarea.selectionStart = textarea.selectionEnd = start + newCursorOffset;
+              sandboxCode.value = textarea.value;
+              onSandboxCodeInput();
+              return;
+            }
+          }
+
+          // 一般情況 (延續上一行基礎縮排) 或 Python ':' 情況
+          textarea.value = textBeforeCursor + insertText + textAfterCursor;
+          textarea.selectionStart = textarea.selectionEnd = start + newCursorOffset;
+          sandboxCode.value = textarea.value;
+          onSandboxCodeInput();
+        };
+
         // 行號槽與 textarea 垂直捲動聯動
         const syncSandboxEditorScroll = (e) => {
           if (sandboxLineGutterRef.value && e && e.target) {
@@ -5421,6 +5498,7 @@ def __run_with_trace(user_code_str, stdin_str):
           onSandboxCodeInput,
           saveSandboxStdin,
           handleSandboxTab,
+          handleSandboxEnter,
           syncSandboxEditorScroll,
           autoFormatSandboxCode,
           exportSandboxCode,
