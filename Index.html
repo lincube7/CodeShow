@@ -1430,10 +1430,21 @@
 
           <!-- 程式碼輸入區 -->
           <div>
-            <div class="flex items-center justify-between mb-1">
-              <label class="block text-xs font-medium text-slate-300">
-                貼上程式碼 (若含填空練習請用「??」作為空格標記)
-              </label>
+            <div class="flex items-center justify-between mb-1.5 flex-wrap gap-2">
+              <div class="flex items-center gap-2">
+                <label class="block text-xs font-medium text-slate-300">
+                  貼上程式碼 (若含填空練習請用「??」作為空格標記)
+                </label>
+                <!-- 🪄 美化排版按鈕 -->
+                <button
+                  type="button"
+                  @click="autoFormatUploadCode"
+                  class="px-2.5 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-slate-700 text-xs flex items-center gap-1 active:scale-95 transition shadow-sm"
+                  title="依當前語言自動調整縮排與排版美化">
+                  <span class="text-xs">🪄</span>
+                  <span>美化排版</span>
+                </button>
+              </div>
               <span class="text-[11px] text-amber-400 font-mono">
                 💡 填空題可打「??」(短空) 或「????」(長空)
               </span>
@@ -4160,14 +4171,13 @@ int main() {
           }
         };
 
-        // 🪄 魔術棒程式碼自動排版美化 (Python PEP 8 / C++ 1TBS)
-        const autoFormatSandboxCode = () => {
-          const raw = sandboxCode.value || '';
-          if (!raw.trim()) return;
+        // 核心程式碼自動排版引擎 (C++ 1TBS / Python PEP 8)
+        const formatCodeHelper = (rawCode, lang) => {
+          if (!rawCode || !rawCode.trim()) return '';
 
-          if (sandboxLang.value === 'cpp') {
-            // C++: 嚴格 1TBS / OTBS 規範
-            let text = raw.replace(/\r\n/g, '\n').replace(/\t/g, '    ');
+          if (lang === 'cpp' || lang === 'c' || lang === 'java' || lang === 'javascript') {
+            // C++/C/Java/JS: 嚴格 1TBS / OTBS 規範
+            let text = rawCode.replace(/\r\n/g, '\n').replace(/\t/g, '    ');
             text = text.replace(/([^\s{;])\s*\n\s*\{/g, '$1 {');
             text = text.replace(/\}\s*\n\s*else\b/g, '} else');
             text = text.replace(/\}\s*\n\s*catch\b/g, '} catch');
@@ -4212,18 +4222,36 @@ int main() {
                 indentLevel = Math.max(0, indentLevel);
               }
             }
-            sandboxCode.value = result.join('\n');
+            return result.join('\n');
           } else {
             // Python: PEP 8 規範 (Tab轉4空格，清理行尾多餘空白)
-            const lines = raw.replace(/\r\n/g, '\n').split('\n');
+            const lines = rawCode.replace(/\r\n/g, '\n').split('\n');
             const result = lines.map(l => {
               let s = l.replace(/\t/g, '    ');
               return s.trimEnd();
             });
-            sandboxCode.value = result.join('\n');
+            return result.join('\n');
           }
+        };
 
+        // 🪄 魔術棒程式碼自動排版美化 (自由沙盒)
+        const autoFormatSandboxCode = () => {
+          const raw = sandboxCode.value || '';
+          if (!raw.trim()) return;
+          sandboxCode.value = formatCodeHelper(raw, sandboxLang.value);
           onSandboxCodeInput();
+          showToast("✨ 程式碼排版美化完成！");
+        };
+
+        // 🪄 魔術棒程式碼自動排版美化 (上傳代碼)
+        const autoFormatUploadCode = () => {
+          const raw = form.value.code || '';
+          if (!raw.trim()) {
+            showToast("請先貼上程式碼再進行美化！", "error");
+            return;
+          }
+          form.value.code = formatCodeHelper(raw, form.value.language || 'python');
+          onCodeInput();
           showToast("✨ 程式碼排版美化完成！");
         };
 
@@ -5395,6 +5423,7 @@ def __run_with_trace(user_code_str, stdin_str):
           setOcrProtection,
           refreshNoise,
           onCodeInput,
+          autoFormatUploadCode,
           selectCourse,
           preloadProblemImage,
           openImageModal,
