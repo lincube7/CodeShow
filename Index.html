@@ -1732,6 +1732,9 @@
                   <span v-else-if="sandboxMode === 'debug' && sandboxTotalSteps > 0" class="text-slate-400 text-[11px]">
                     步驟 {{ sandboxCurrentStepIndex + 1 }} / {{ sandboxTotalSteps }}
                   </span>
+                  <span v-else-if="sandboxMode === 'debug' && sandboxCurrentStepIndex === -1" class="text-indigo-400 text-[11px]">
+                    準備就緒（可編輯測資）
+                  </span>
                   <span v-else-if="sandboxMode === 'editor'" class="text-slate-500 text-[11px]">
                     共 {{ sandboxLineCount }} 行
                   </span>
@@ -2051,6 +2054,9 @@
               <span v-if="sandboxMode === 'debug' && sandboxTotalSteps > 0" class="text-slate-400">
                 執行步驟: <strong class="text-indigo-400">{{ sandboxCurrentStepIndex + 1 }}</strong> / {{ sandboxTotalSteps }}
               </span>
+              <span v-else-if="sandboxMode === 'debug' && sandboxCurrentStepIndex === -1" class="text-indigo-400 font-sans">
+                (準備就緒)
+              </span>
               <span v-if="sandboxMode === 'debug' && sandboxCurrentStdinLine > 0" class="px-2 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 font-semibold flex items-center gap-1 text-[11px]">
                 <span>📥</span> 已讀入至測資第 {{ sandboxCurrentStdinLine }} 行
               </span>
@@ -2180,7 +2186,7 @@
                     {{ sandboxExecuting ? '⏳ 執行中...' : '準備就緒' }}
                   </template>
                   <template v-else>
-                    {{ sandboxIsAutoPlaying ? '⚡ 自動執行中...' : (sandboxExecFinished ? '✓ 已執行結束' : '逐步追蹤中') }}
+                    {{ sandboxIsAutoPlaying ? '⚡ 自動執行中...' : (sandboxExecFinished ? '✓ 已執行結束' : (sandboxCurrentStepIndex === -1 ? '準備就緒' : '逐步追蹤中')) }}
                   </template>
                 </span>
               </div>
@@ -4353,8 +4359,8 @@ __sb_result = __sb_stdout.getvalue()
           }
         };
 
-        // 🔍 進入逐行除錯 (Step Debugger) 模式
-        const startSandboxDebug = async () => {
+        // 預先追蹤沙盒編譯與執行紀錄 (一次跑完生成逐步快照)
+        const prepareSandboxDebugTrace = async () => {
           sandboxExecuting.value = true;
           sandboxError.value = null;
           const lang = sandboxLang.value;
@@ -4565,17 +4571,24 @@ def __run_with_trace(user_code_str, stdin_str):
 
             if (sandboxRecordedSteps.value.length === 0) {
               showToast("程式碼執行完畢（無可追蹤的執行行）");
-              return;
+              return false;
             }
-
-            sandboxMode.value = 'debug';
-            applySandboxStep(0);
+            return true;
           } catch (err) {
             console.error("進入逐行除錯失敗:", err);
             sandboxError.value = parseExecutionError(err, lang);
+            return false;
           } finally {
             sandboxExecuting.value = false;
           }
+        };
+
+        // 🔍 進入逐行除錯 (Step Debugger) 模式
+        const startSandboxDebug = async () => {
+          const ok = await prepareSandboxDebugTrace();
+          if (!ok || sandboxRecordedSteps.value.length === 0) return;
+          sandboxMode.value = 'debug';
+          applySandboxStep(0);
         };
 
         // 渲染指定步驟 (包含行高亮、變數 diff 橘色高亮與輸出同步)
@@ -4634,8 +4647,12 @@ def __run_with_trace(user_code_str, stdin_str):
         };
 
         // 步進按鈕動作：下一步
-        const stepForwardSandbox = () => {
+        const stepForwardSandbox = async () => {
           stopSandboxAutoPlay();
+          if (sandboxRecordedSteps.value.length === 0) {
+            const ok = await prepareSandboxDebugTrace();
+            if (!ok || sandboxRecordedSteps.value.length === 0) return;
+          }
           if (sandboxCurrentStepIndex.value < sandboxRecordedSteps.value.length - 1) {
             applySandboxStep(sandboxCurrentStepIndex.value + 1);
           } else {
@@ -4652,32 +4669,33 @@ def __run_with_trace(user_code_str, stdin_str):
           }
         };
 
-        // 步進按鈕動作：重新開始
+        // 步進按鈕動作：重新開始 (回到未開始狀態，允許使用者修改或更換測資)
         const resetSandboxExecution = () => {
           stopSandboxAutoPlay();
           sandboxError.value = null;
           sandboxCurrentStdinLine.value = 0;
+          sandboxRecordedSteps.value = []; // 清空預錄步驟，以便以最新輸入資料重新追蹤
+          sandboxCurrentStepIndex.value = -1; // 回到未開始狀態，使 stdin 輸入框恢復為可編輯狀態
+          sandboxCurrentExecutingLine.value = null;
+          sandboxVariableList.value = [];
+          sandboxStdout.value = '';
+          sandboxExecFinished.value = false;
+          sandboxShowRawStdin.value = false;
           if (sandboxStdinScrollRef.value) {
             sandboxStdinScrollRef.value.scrollTop = 0;
           }
-          if (sandboxRecordedSteps.value.length > 0) {
-            applySandboxStep(0);
-          } else {
-            sandboxCurrentStepIndex.value = -1;
-            sandboxCurrentExecutingLine.value = null;
-            sandboxVariableList.value = [];
-            sandboxStdout.value = '';
-            sandboxExecFinished.value = false;
-          }
+          showToast("已重置除錯狀態，可重新輸入或調整測資！");
         };
 
         // 步進按鈕動作：執行到底
-        const runToBottomSandbox = () => {
+        const runToBottomSandbox = async () => {
           stopSandboxAutoPlay();
-          if (sandboxRecordedSteps.value.length > 0) {
-            applySandboxStep(sandboxRecordedSteps.value.length - 1, true);
-            showToast("已執行至程式結束！");
+          if (sandboxRecordedSteps.value.length === 0) {
+            const ok = await prepareSandboxDebugTrace();
+            if (!ok || sandboxRecordedSteps.value.length === 0) return;
           }
+          applySandboxStep(sandboxRecordedSteps.value.length - 1, true);
+          showToast("已執行至程式結束！");
         };
 
         // ==================== 沙盒中斷點 (Breakpoints) 系統 ====================
@@ -4699,9 +4717,12 @@ def __run_with_trace(user_code_str, stdin_str):
         };
 
         // 🎯 沙盒執行到中斷點
-        const runToBreakpointSandbox = () => {
+        const runToBreakpointSandbox = async () => {
           stopSandboxAutoPlay();
-          if (sandboxRecordedSteps.value.length === 0) return;
+          if (sandboxRecordedSteps.value.length === 0) {
+            const ok = await prepareSandboxDebugTrace();
+            if (!ok || sandboxRecordedSteps.value.length === 0) return;
+          }
           if (sandboxExecFinished.value || sandboxCurrentStepIndex.value >= sandboxRecordedSteps.value.length - 1) {
             showToast("程式已執行結束，請先按重新開始！");
             return;
@@ -4743,7 +4764,14 @@ def __run_with_trace(user_code_str, stdin_str):
         const startSandboxAutoPlay = () => {
           stopSandboxAutoPlay();
           sandboxIsAutoPlaying.value = true;
-          sandboxAutoPlayTimer = setInterval(() => {
+          sandboxAutoPlayTimer = setInterval(async () => {
+            if (sandboxRecordedSteps.value.length === 0) {
+              const ok = await prepareSandboxDebugTrace();
+              if (!ok || sandboxRecordedSteps.value.length === 0) {
+                stopSandboxAutoPlay();
+                return;
+              }
+            }
             if (sandboxCurrentStepIndex.value >= sandboxRecordedSteps.value.length - 1) {
               sandboxExecFinished.value = true;
               stopSandboxAutoPlay();
@@ -4769,13 +4797,16 @@ def __run_with_trace(user_code_str, stdin_str):
           }, autoPlaySpeed.value);
         };
 
-        const toggleSandboxAutoPlay = () => {
+        const toggleSandboxAutoPlay = async () => {
           if (sandboxIsAutoPlaying.value) {
             stopSandboxAutoPlay();
             showToast("已暫停自動執行");
             return;
           }
-          if (sandboxRecordedSteps.value.length === 0) return;
+          if (sandboxRecordedSteps.value.length === 0) {
+            const ok = await prepareSandboxDebugTrace();
+            if (!ok || sandboxRecordedSteps.value.length === 0) return;
+          }
           if (sandboxExecFinished.value || sandboxCurrentStepIndex.value >= sandboxRecordedSteps.value.length - 1) {
             resetSandboxExecution();
           }
@@ -5532,6 +5563,7 @@ def __run_with_trace(user_code_str, stdin_str):
           exportSandboxCode,
           returnToSandboxEditor,
           runSandboxDirect,
+          prepareSandboxDebugTrace,
           startSandboxDebug,
           stepForwardSandbox,
           stepBackwardSandbox,
