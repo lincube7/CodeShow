@@ -3695,23 +3695,22 @@ def __run_with_trace(user_code_str, stdin_str):
           }
         };
 
-        // 控制按鈕動作：重新開始 (回到第一列)
+        // 控制按鈕動作：重新開始 (回到未開始狀態，允許使用者修改或更換測資)
         const resetExecution = () => {
           stopAutoPlay();
           execError.value = null;
           currentStdinLine.value = 0;
+          recordedSteps.value = []; // 清空預錄步驟，以便以最新輸入資料重新追蹤
+          currentStepIndex.value = -1; // 回到未開始狀態，使 stdin 輸入框恢復為可編輯狀態
+          currentExecutingLine.value = null;
+          variableList.value = [];
+          currentOutput.value = '';
+          execFinished.value = false;
+          showRawStdin.value = false;
           if (stdinScrollRef.value) {
             stdinScrollRef.value.scrollTop = 0;
           }
-          if (recordedSteps.value.length > 0) {
-            applyStep(0);
-          } else {
-            currentStepIndex.value = -1;
-            currentExecutingLine.value = null;
-            variableList.value = [];
-            currentOutput.value = '';
-            execFinished.value = false;
-          }
+          showToast("已重置除錯狀態，可重新輸入或調整測資！");
         };
 
         // 控制按鈕動作：⏩ 執行到底
