@@ -3228,9 +3228,18 @@ print("Result:", calculate_sum(10))`
 
         // 智能錯誤解析與教學指引產生器 (過濾堆疊，提取行號與友善中文提示)
         const parseExecutionError = (err, lang) => {
-          const raw = String((err && (err.message || err.toString())) || '未知執行錯誤');
+          let lineNo = (err && typeof err === 'object' && err.line) ? parseInt(err.line, 10) : null;
+          let raw = '';
+          if (err && typeof err === 'object') {
+            if (err.type && err.message) {
+              raw = `${err.type}: ${err.message}`;
+            } else {
+              raw = String(err.message || err.toString() || '未知執行錯誤');
+            }
+          } else {
+            raw = String(err || '未知執行錯誤');
+          }
           let errType = '執行錯誤';
-          let lineNo = null;
           let cleanMsg = raw;
           let hint = '';
 
@@ -3238,9 +3247,11 @@ print("Result:", calculate_sum(10))`
             errType = 'C++ 語法/執行錯誤';
 
             // 擷取行號 (例如 line 5: 或 第 5 行 或 :5:)
-            const lineMatch = raw.match(/(?:line|第|\:)\s*(\d+)/i);
-            if (lineMatch) {
-              lineNo = parseInt(lineMatch[1], 10);
+            if (!lineNo) {
+              const lineMatch = raw.match(/(?:line|第|\:)\s*(\d+)/i);
+              if (lineMatch) {
+                lineNo = parseInt(lineMatch[1], 10);
+              }
             }
 
             // 清理錯誤訊息字串
@@ -3266,13 +3277,15 @@ print("Result:", calculate_sum(10))`
             }
           } else {
             // Python (Pyodide) 錯誤解析
-            // 1. 優先從 Traceback 找出 <user_code> 的行號
-            const userCodeMatch = raw.match(/File\s+["']<user_code>["'],\s+line\s+(\d+)/i);
-            if (userCodeMatch) {
-              lineNo = parseInt(userCodeMatch[1], 10);
-            } else {
-              const fallbackLineMatch = raw.match(/line\s+(\d+)/i);
-              if (fallbackLineMatch) lineNo = parseInt(fallbackLineMatch[1], 10);
+            // 1. 優先從 Traceback 找出 <user_code> 的行號 (若尚未有 lineNo)
+            if (!lineNo) {
+              const userCodeMatch = raw.match(/File\s+["']<user_code>["'],\s+line\s+(\d+)/i);
+              if (userCodeMatch) {
+                lineNo = parseInt(userCodeMatch[1], 10);
+              } else {
+                const fallbackLineMatch = raw.match(/line\s+(\d+)/i);
+                if (fallbackLineMatch) lineNo = parseInt(fallbackLineMatch[1], 10);
+              }
             }
 
             // 2. 擷取 Python 例外類型與訊息 (如 SyntaxError: invalid syntax)
@@ -3490,7 +3503,28 @@ print("Result:", calculate_sum(10))`
                   lastLine = currentLine;
                 }
 
-                const done = myDebugger.next();
+                let done = false;
+                try {
+                  done = myDebugger.next();
+                } catch (runtimeErr) {
+                  const errObj = {
+                    type: 'C++ 執行錯誤',
+                    message: runtimeErr.message || String(runtimeErr),
+                    line: currentLine || lastLine || 1
+                  };
+                  if (steps.length > 0) {
+                    steps[steps.length - 1].error = errObj;
+                  } else {
+                    steps.push({
+                      line: currentLine || 1,
+                      variables: {},
+                      output: stdoutBuffer,
+                      stdin_line: cppStdinLinesRead,
+                      error: errObj
+                    });
+                  }
+                  break;
+                }
                 stepCount++;
                 if (done) break;
               }
@@ -3528,6 +3562,8 @@ class TraceRecorder:
         self.max_steps = max_steps
         self.stdout_capture = io.StringIO()
         self.stdin_tracker = stdin_tracker
+        self.last_locals = {}
+        self.last_line = None
 
     def serialize_val(self, v):
         if isinstance(v, (int, float, str, bool)) or v is None:
@@ -3556,6 +3592,8 @@ class TraceRecorder:
                         except Exception:
                             local_vars[k] = repr(v)
 
+                self.last_locals = local_vars
+                self.last_line = frame.f_lineno
                 stdin_line = self.stdin_tracker.lines_read if self.stdin_tracker else 0
                 self.steps.append({
                     "line": frame.f_lineno,
@@ -3574,10 +3612,30 @@ def __run_with_trace(user_code_str, stdin_str):
     sys.stdout = recorder.stdout_capture
     sys.stdin = stdin_tracker
 
+    error_info = None
     try:
         compiled = compile(user_code_str, "<user_code>", "exec")
+    except SyntaxError as syn_err:
+        sys.stdout = old_stdout
+        sys.stdin = old_stdin
+        raise syn_err
+
+    try:
         sys.settrace(recorder.trace_callback)
         exec(compiled, {"__name__": "__main__"})
+    except Exception as e:
+        import sys
+        tb = sys.exc_info()[2]
+        err_line = None
+        while tb:
+            if tb.tb_frame.f_code.co_filename == "<user_code>":
+                err_line = tb.tb_lineno
+            tb = tb.tb_next
+        error_info = {
+            "type": type(e).__name__,
+            "message": str(e),
+            "line": err_line if err_line is not None else recorder.last_line
+        }
     finally:
         sys.settrace(None)
         # 捕捉最後一次輸出的完成態
@@ -3585,6 +3643,20 @@ def __run_with_trace(user_code_str, stdin_str):
             recorder.steps[-1]["output"] = recorder.stdout_capture.getvalue()
         sys.stdout = old_stdout
         sys.stdin = old_stdin
+
+    if error_info:
+        if recorder.steps:
+            if error_info.get("line"):
+                recorder.steps[-1]["line"] = error_info["line"]
+            recorder.steps[-1]["error"] = error_info
+        else:
+            recorder.steps.append({
+                "line": error_info.get("line") or 1,
+                "variables": {},
+                "output": recorder.stdout_capture.getvalue(),
+                "stdin_line": 0,
+                "error": error_info
+            })
 
     return json.dumps(recorder.steps)
 `;
@@ -3632,6 +3704,16 @@ def __run_with_trace(user_code_str, stdin_str):
           currentStdinLine.value = (step && step.stdin_line !== undefined) ? step.stdin_line : 0;
           execFinished.value = (index === recordedSteps.value.length - 1);
 
+          // 錯誤連動：若當前步驟為出錯步驟，顯示錯誤面板；若回溯至正常步驟，收合錯誤面板
+          if (step.error) {
+            const lang = (activeProblem.value?.language || 'python').toLowerCase();
+            execError.value = parseExecutionError(step.error, lang);
+            stopAutoPlay();
+            showToast(`程式於第 ${step.line} 行發生執行錯誤！`, "error");
+          } else {
+            execError.value = null;
+          }
+
           // 計算變數與上一步的差異
           const prevStep = index > 0 ? recordedSteps.value[index - 1] : null;
           const prevVars = prevStep ? prevStep.variables : {};
@@ -3651,9 +3733,14 @@ def __run_with_trace(user_code_str, stdin_str):
 
           // 自動捲動到當前執行行、剛更新的變數，以及當前正在讀取的 stdin 測資行
           nextTick(() => {
-            const activeLineEl = document.querySelector('.exec-line-active');
-            if (activeLineEl && codeScrollRef.value) {
-              activeLineEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            const errLineEl = document.querySelector('.exec-line-error');
+            if (errLineEl && codeScrollRef.value) {
+              errLineEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } else {
+              const activeLineEl = document.querySelector('.exec-line-active');
+              if (activeLineEl && codeScrollRef.value) {
+                activeLineEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              }
             }
             // 自動滾動到剛更新的變數 (避免在畫面外學生沒注意)
             const changedVarEl = document.querySelector('.var-changed-flash');
@@ -3689,7 +3776,9 @@ def __run_with_trace(user_code_str, stdin_str):
             applyStep(currentStepIndex.value + 1);
           } else {
             execFinished.value = true;
-            showToast("已執行至最後一行！");
+            if (!recordedSteps.value[currentStepIndex.value]?.error) {
+              showToast("已執行至最後一行！");
+            }
           }
         };
 
@@ -3726,8 +3815,11 @@ def __run_with_trace(user_code_str, stdin_str):
             const ok = await prepareExecutionTrace();
             if (!ok || recordedSteps.value.length === 0) return;
           }
-          applyStep(recordedSteps.value.length - 1, true); // scrollToTop=true → stdout 置頂，從頭對答案
-          showToast("已執行至程式結束！");
+          const lastIdx = recordedSteps.value.length - 1;
+          applyStep(lastIdx, true); // scrollToTop=true → stdout 置頂，從頭對答案
+          if (!recordedSteps.value[lastIdx]?.error) {
+            showToast("已執行至程式結束！");
+          }
         };
 
         // ==================== 題庫中斷點 (Breakpoints) 系統 ====================
@@ -3777,11 +3869,14 @@ def __run_with_trace(user_code_str, stdin_str):
             showToast(`🎯 已暫停於第 ${hitLine} 行中斷點`);
           } else {
             // 後續無中斷點，直接執行到底
-            applyStep(recordedSteps.value.length - 1, true);
-            if (breakpoints.value.size > 0) {
-              showToast("後續無經過中斷點，已執行至結束！");
-            } else {
-              showToast("未設定中斷點，已執行至程式結束！");
+            const lastIdx = recordedSteps.value.length - 1;
+            applyStep(lastIdx, true);
+            if (!recordedSteps.value[lastIdx]?.error) {
+              if (breakpoints.value.size > 0) {
+                showToast("後續無經過中斷點，已執行至結束！");
+              } else {
+                showToast("未設定中斷點，已執行至程式結束！");
+              }
             }
           }
         };
@@ -3824,12 +3919,19 @@ def __run_with_trace(user_code_str, stdin_str):
             if (currentStepIndex.value >= recordedSteps.value.length - 1) {
               execFinished.value = true;
               stopAutoPlay();
-              showToast("已執行至程式結束！");
+              if (!recordedSteps.value[currentStepIndex.value]?.error) {
+                showToast("已執行至程式結束！");
+              }
               return;
             }
 
             const nextIdx = currentStepIndex.value + 1;
             applyStep(nextIdx);
+
+            if (recordedSteps.value[nextIdx]?.error) {
+              stopAutoPlay();
+              return;
+            }
 
             const currLine = recordedSteps.value[nextIdx]?.line;
             if (currLine && breakpoints.value.has(currLine)) {
@@ -3841,7 +3943,9 @@ def __run_with_trace(user_code_str, stdin_str):
             if (nextIdx >= recordedSteps.value.length - 1) {
               execFinished.value = true;
               stopAutoPlay();
-              showToast("已執行至最後一行！");
+              if (!recordedSteps.value[nextIdx]?.error) {
+                showToast("已執行至最後一行！");
+              }
             }
           }, autoPlaySpeed.value);
         };
@@ -4470,7 +4574,28 @@ __sb_result = __sb_stdout.getvalue()
                   lastLine = currentLine;
                 }
 
-                const done = myDebugger.next();
+                let done = false;
+                try {
+                  done = myDebugger.next();
+                } catch (runtimeErr) {
+                  const errObj = {
+                    type: 'C++ 執行錯誤',
+                    message: runtimeErr.message || String(runtimeErr),
+                    line: currentLine || lastLine || 1
+                  };
+                  if (steps.length > 0) {
+                    steps[steps.length - 1].error = errObj;
+                  } else {
+                    steps.push({
+                      line: currentLine || 1,
+                      variables: {},
+                      output: stdoutBuffer,
+                      stdin_line: cppStdinLinesRead,
+                      error: errObj
+                    });
+                  }
+                  break;
+                }
                 stepCount++;
                 if (done) break;
               }
@@ -4505,6 +4630,8 @@ class TraceRecorder:
         self.max_steps = max_steps
         self.stdout_capture = io.StringIO()
         self.stdin_tracker = stdin_tracker
+        self.last_locals = {}
+        self.last_line = None
 
     def serialize_val(self, v):
         if isinstance(v, (int, float, str, bool)) or v is None:
@@ -4531,6 +4658,8 @@ class TraceRecorder:
                         except Exception:
                             local_vars[k] = repr(v)
 
+                self.last_locals = local_vars
+                self.last_line = frame.f_lineno
                 stdin_line = self.stdin_tracker.lines_read if self.stdin_tracker else 0
                 self.steps.append({
                     "line": frame.f_lineno,
@@ -4549,16 +4678,51 @@ def __run_with_trace(user_code_str, stdin_str):
     sys.stdout = recorder.stdout_capture
     sys.stdin = stdin_tracker
 
+    error_info = None
     try:
         compiled = compile(user_code_str, "<user_code>", "exec")
+    except SyntaxError as syn_err:
+        sys.stdout = old_stdout
+        sys.stdin = old_stdin
+        raise syn_err
+
+    try:
         sys.settrace(recorder.trace_callback)
         exec(compiled, {"__name__": "__main__"})
+    except Exception as e:
+        import sys
+        tb = sys.exc_info()[2]
+        err_line = None
+        while tb:
+            if tb.tb_frame.f_code.co_filename == "<user_code>":
+                err_line = tb.tb_lineno
+            tb = tb.tb_next
+        error_info = {
+            "type": type(e).__name__,
+            "message": str(e),
+            "line": err_line if err_line is not None else recorder.last_line
+        }
     finally:
         sys.settrace(None)
+        # 捕捉最後一次輸出的完成態
         if recorder.steps:
             recorder.steps[-1]["output"] = recorder.stdout_capture.getvalue()
         sys.stdout = old_stdout
         sys.stdin = old_stdin
+
+    if error_info:
+        if recorder.steps:
+            if error_info.get("line"):
+                recorder.steps[-1]["line"] = error_info["line"]
+            recorder.steps[-1]["error"] = error_info
+        else:
+            recorder.steps.append({
+                "line": error_info.get("line") or 1,
+                "variables": {},
+                "output": recorder.stdout_capture.getvalue(),
+                "stdin_line": 0,
+                "error": error_info
+            })
 
     return json.dumps(recorder.steps)
 `;
@@ -4602,6 +4766,16 @@ def __run_with_trace(user_code_str, stdin_str):
           sandboxCurrentStdinLine.value = (step && step.stdin_line !== undefined) ? step.stdin_line : 0;
           sandboxExecFinished.value = (index === sandboxRecordedSteps.value.length - 1);
 
+          // 錯誤連動：若當前步驟為出錯步驟，顯示錯誤面板；若回溯至正常步驟，收合錯誤面板
+          if (step.error) {
+            const lang = sandboxLang.value;
+            sandboxError.value = parseExecutionError(step.error, lang);
+            stopSandboxAutoPlay();
+            showToast(`程式於第 ${step.line} 行發生執行錯誤！`, "error");
+          } else {
+            sandboxError.value = null;
+          }
+
           const prevStep = index > 0 ? sandboxRecordedSteps.value[index - 1] : null;
           const prevVars = prevStep ? prevStep.variables : {};
           const currentVars = step.variables || {};
@@ -4619,9 +4793,14 @@ def __run_with_trace(user_code_str, stdin_str):
 
           nextTick(() => {
             if (sandboxCodeScrollRef.value) {
-              const activeLineEl = sandboxCodeScrollRef.value.querySelector('.exec-line-active');
-              if (activeLineEl) {
-                activeLineEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              const errLineEl = sandboxCodeScrollRef.value.querySelector('.exec-line-error');
+              if (errLineEl) {
+                errLineEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              } else {
+                const activeLineEl = sandboxCodeScrollRef.value.querySelector('.exec-line-active');
+                if (activeLineEl) {
+                  activeLineEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
               }
             }
             if (sandboxVarScrollRef.value) {
@@ -4657,7 +4836,9 @@ def __run_with_trace(user_code_str, stdin_str):
             applySandboxStep(sandboxCurrentStepIndex.value + 1);
           } else {
             sandboxExecFinished.value = true;
-            showToast("已執行至最後一行！");
+            if (!sandboxRecordedSteps.value[sandboxCurrentStepIndex.value]?.error) {
+              showToast("已執行至最後一行！");
+            }
           }
         };
 
@@ -4694,8 +4875,11 @@ def __run_with_trace(user_code_str, stdin_str):
             const ok = await prepareSandboxDebugTrace();
             if (!ok || sandboxRecordedSteps.value.length === 0) return;
           }
-          applySandboxStep(sandboxRecordedSteps.value.length - 1, true);
-          showToast("已執行至程式結束！");
+          const lastIdx = sandboxRecordedSteps.value.length - 1;
+          applySandboxStep(lastIdx, true);
+          if (!sandboxRecordedSteps.value[lastIdx]?.error) {
+            showToast("已執行至程式結束！");
+          }
         };
 
         // ==================== 沙盒中斷點 (Breakpoints) 系統 ====================
@@ -4743,11 +4927,14 @@ def __run_with_trace(user_code_str, stdin_str):
             const hitLine = sandboxRecordedSteps.value[targetStepIdx]?.line;
             showToast(`🎯 已暫停於第 ${hitLine} 行中斷點`);
           } else {
-            applySandboxStep(sandboxRecordedSteps.value.length - 1, true);
-            if (sandboxBreakpoints.value.size > 0) {
-              showToast("後續無經過中斷點，已執行至結束！");
-            } else {
-              showToast("未設定中斷點，已執行至程式結束！");
+            const lastIdx = sandboxRecordedSteps.value.length - 1;
+            applySandboxStep(lastIdx, true);
+            if (!sandboxRecordedSteps.value[lastIdx]?.error) {
+              if (sandboxBreakpoints.value.size > 0) {
+                showToast("後續無經過中斷點，已執行至結束！");
+              } else {
+                showToast("未設定中斷點，已執行至程式結束！");
+              }
             }
           }
         };
@@ -4775,12 +4962,19 @@ def __run_with_trace(user_code_str, stdin_str):
             if (sandboxCurrentStepIndex.value >= sandboxRecordedSteps.value.length - 1) {
               sandboxExecFinished.value = true;
               stopSandboxAutoPlay();
-              showToast("已執行至程式結束！");
+              if (!sandboxRecordedSteps.value[sandboxCurrentStepIndex.value]?.error) {
+                showToast("已執行至程式結束！");
+              }
               return;
             }
 
             const nextIdx = sandboxCurrentStepIndex.value + 1;
             applySandboxStep(nextIdx);
+
+            if (sandboxRecordedSteps.value[nextIdx]?.error) {
+              stopSandboxAutoPlay();
+              return;
+            }
 
             const currLine = sandboxRecordedSteps.value[nextIdx]?.line;
             if (currLine && sandboxBreakpoints.value.has(currLine)) {
@@ -4792,7 +4986,9 @@ def __run_with_trace(user_code_str, stdin_str):
             if (nextIdx >= sandboxRecordedSteps.value.length - 1) {
               sandboxExecFinished.value = true;
               stopSandboxAutoPlay();
-              showToast("已執行至最後一行！");
+              if (!sandboxRecordedSteps.value[nextIdx]?.error) {
+                showToast("已執行至最後一行！");
+              }
             }
           }, autoPlaySpeed.value);
         };
