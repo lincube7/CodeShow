@@ -204,7 +204,10 @@
     .zoom-img {
       transform-origin: center center;
       max-width: 100%;
+      max-height: calc(92vh - 180px);
+      width: auto;
       height: auto;
+      object-fit: contain;
       display: block;
       pointer-events: none;
       user-select: none;
@@ -533,21 +536,68 @@
               @mouseenter="preloadProblemImage(prob)"
               @click="openImageModal(prob)">
               
-              <div class="flex items-center justify-between gap-1 mb-2">
-                <div class="flex items-center gap-1.5 min-w-0">
-                  <span 
-                    class="font-mono font-bold px-2 py-0.5 rounded truncate"
-                    :class="[
-                      displayDensity === 'compact' ? 'text-xs' : 'text-sm',
-                      prob.isHidden 
-                        ? 'bg-red-500/15 text-red-300 border border-red-500/30' 
-                        : 'bg-blue-500/15 text-blue-300 border border-blue-500/30'
-                    ]"
-                    v-html="getHighlightedText(prob.problemNo, searchQuery)">
-                  </span>
-                  <span v-if="prob.isHidden" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/40 whitespace-nowrap">
-                    🙈 已隱藏
-                  </span>
+              <div :class="displayDensity === 'compact' ? 'flex flex-col gap-1 mb-2' : 'flex items-center justify-between gap-1 mb-2'">
+                <!-- 左側：題號區 (老師模式：點擊題號標籤本身進入就地編輯，無需額外按鈕) -->
+                <div :class="displayDensity === 'compact' ? 'flex items-center gap-1 w-full' : 'flex items-center gap-1 min-w-0 flex-1'">
+                  <!-- 編輯中狀態 -->
+                  <div 
+                    v-if="editingProblemKey === (prob.course + '_' + prob.problemNo)" 
+                    class="flex items-center gap-1 w-full" 
+                    @click.stop>
+                    <input 
+                      :ref="el => { if (el) editProblemInputRef = el; }"
+                      type="text" 
+                      v-model="editingProblemInputVal"
+                      @click.stop
+                      @keydown.enter.prevent="saveEditedProblemNo(prob)"
+                      @keydown.esc.prevent="cancelEditProblemNo"
+                      class="flex-1 min-w-0 px-1.5 py-0.5 font-mono text-xs font-bold rounded bg-slate-900 border border-amber-400 text-amber-200 focus:outline-none focus:ring-1 focus:ring-amber-400 shadow-sm"
+                      placeholder="新題號" />
+                    <button 
+                      type="button"
+                      @click.stop="saveEditedProblemNo(prob)"
+                      title="確認 (Enter)"
+                      class="w-6 h-6 flex items-center justify-center rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow transition active:scale-95 shrink-0">
+                      ✓
+                    </button>
+                    <button 
+                      type="button"
+                      @click.stop="cancelEditProblemNo"
+                      title="取消 (Esc)"
+                      class="w-6 h-6 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white text-xs font-bold border border-slate-600 transition active:scale-95 shrink-0">
+                      ✕
+                    </button>
+                  </div>
+
+                  <!-- 正常檢視狀態 -->
+                  <template v-else>
+                    <!-- 題號標籤 -->
+                    <span 
+                      class="font-mono font-bold px-2 py-0.5 rounded shrink-0"
+                      :class="[
+                        displayDensity === 'compact' ? 'text-xs' : 'text-sm',
+                        prob.isHidden
+                          ? 'bg-red-500/15 text-red-300 border border-red-500/30'
+                          : 'bg-blue-500/15 text-blue-300 border border-blue-500/30'
+                      ]"
+                      v-html="getHighlightedText(prob.problemNo, searchQuery)">
+                    </span>
+
+                    <!-- 老師模式：✏ 修改題號按鈕（緊湊/舒適皆顯示，避免誤觸題號） -->
+                    <button
+                      v-if="userInfo.isTeacher"
+                      type="button"
+                      @click.stop="startEditProblemNo(prob)"
+                      title="修改題號"
+                      class="w-5 h-5 flex items-center justify-center rounded bg-slate-800 hover:bg-amber-600/80 text-slate-400 hover:text-white text-[10px] transition border border-slate-700 shrink-0">
+                      ✏️
+                    </button>
+
+                    <!-- 緊湊模式：已隱藏徽章在題號行內 -->
+                    <span v-if="prob.isHidden && displayDensity === 'compact'" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/40 whitespace-nowrap shrink-0">
+                      🙈 已隱藏
+                    </span>
+                  </template>
                 </div>
 
                 <!-- 老師管理按鈕群 (顯示/隱藏切換 + 調序 ◀ / ▶ + 刪除) -->
@@ -589,34 +639,46 @@
                   <button 
                     @click.stop="confirmDelete(prob)"
                     title="刪除此題"
-                    class="w-5 h-5 flex items-center justify-center text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded transition text-xs ml-0.5">
-                    ✕
+                    class="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-white bg-slate-800 hover:bg-red-600 rounded transition ml-0.5 border border-slate-700">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>
+                      <line x1="10" y1="11" x2="10" y2="17"></line>
+                      <line x1="14" y1="11" x2="14" y2="17"></line>
+                    </svg>
                   </button>
                 </div>
               </div>
 
               <div 
-                class="pt-2 border-t flex items-center justify-between text-[11px] font-mono"
-                :class="prob.isHidden ? 'border-red-900/40' : 'border-blue-900/40'">
+                class="pt-1.5 border-t flex items-center gap-2 font-mono"
+                :class="[prob.isHidden ? 'border-red-900/40' : 'border-blue-900/40', displayDensity === 'compact' ? 'text-[9px]' : 'text-[11px]']">
                 <span 
-                  class="flex items-center gap-1 transition-colors"
+                  class="flex items-center gap-0.5 transition-colors whitespace-nowrap"
                   :class="prob.isHidden ? 'text-slate-400 group-hover:text-red-300' : 'text-slate-400 group-hover:text-blue-300'">
                   <span>📄</span> 檢視
                 </span>
                 
-                <div class="flex items-center gap-1.5" @click.stop>
+                <div class="flex items-center gap-1" @click.stop>
                   <!-- 老師專屬：一鍵複製原始碼 -->
                   <button
                     v-if="userInfo.isTeacher && prob.sourceCode"
                     type="button"
                     @click.stop="copyProblemCode(prob)"
                     title="老師管理功能：複製程式碼純文字至剪貼簿以利修改"
-                    class="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white transition flex items-center gap-1 text-[10px] border border-slate-700">
+                    :class="displayDensity === 'compact' ? 'px-1 py-0 text-[9px]' : 'px-1.5 py-0.5 text-[10px]'"
+                    class="rounded bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white transition flex items-center gap-0.5 border border-slate-700">
                     <span>📋</span> 複製代碼
                   </button>
 
-                  <span class="text-[10px] text-slate-500">{{ prob.formattedTime ? prob.formattedTime.split(' ')[0] : '' }}</span>
+                  <!-- 舒適模式：已隱藏徽章放在複製代碼之後 -->
+                  <span v-if="prob.isHidden && displayDensity === 'comfortable'" class="px-1 py-0 rounded text-[9px] font-bold bg-red-500/20 text-red-300 border border-red-500/40 whitespace-nowrap">
+                    🙈 已隱藏
+                  </span>
                 </div>
+
+                <!-- 日期靠右對齊，ml-auto 推至最右（對齊上方 ✕ 位置） -->
+                <span :class="displayDensity === 'compact' ? 'text-[9px]' : 'text-[10px]'" class="ml-auto text-slate-500 whitespace-nowrap">{{ prob.formattedTime ? prob.formattedTime.split(' ')[0] : '' }}</span>
               </div>
             </div>
           </div>
@@ -635,59 +697,67 @@
       <div 
         :class="viewerMode === 'exec' ? 'max-w-6xl xl:max-w-7xl h-[92vh]' : 'max-w-5xl max-h-[92vh]'"
         class="relative bg-slate-900 border border-slate-700 rounded-2xl w-full flex flex-col shadow-2xl overflow-hidden transition-all duration-200">
-        <!-- 彈窗頂部標題 + Zoom 控制列與模式切換 -->
-        <div class="px-5 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/90 gap-3">
-          <div class="flex items-center space-x-2 min-w-0">
+        <!-- 彈窗頂部標題 + Zoom 控制列與模式切換 (支援中央絕對置中與醒目大按鈕) -->
+        <div class="relative px-5 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/90 gap-3 min-h-[60px]">
+          <!-- 左側：題號、章節與語言標籤 -->
+          <div class="flex items-center space-x-2 min-w-0 z-10">
             <span class="px-2.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono text-xs font-bold border border-indigo-500/30 shrink-0">
               {{ activeProblem.problemNo }}
             </span>
-            <span class="text-xs text-slate-400 truncate">({{ activeProblem.chapter }})</span>
+            <span class="text-xs text-slate-400 truncate hidden sm:inline">({{ activeProblem.chapter }})</span>
             <span class="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 shrink-0">
               {{ activeProblem.language || 'python' }}
             </span>
           </div>
 
-          <!-- 模式切換按鈕 (圖片檢視 vs 逐行執行) -->
-          <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs shrink-0">
+          <!-- 中央：模式切換按鈕 (圖片模式 vs 逐行執行) —— 絕對水平置中，雙鍵等寬對稱，內外間距絕對等距 (6px) -->
+          <div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 sm:gap-1.5 bg-slate-950/90 p-1 sm:p-1.5 rounded-2xl border border-slate-700/80 shadow-inner z-10">
             <button
               type="button"
               @click="viewerMode = 'image'; showWatchPanel = false; stopAutoPlay()"
-              :class="viewerMode === 'image' ? 'bg-indigo-600 text-white font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
-              class="px-2.5 py-1 rounded-lg transition flex items-center gap-1">
-              <span>🖼️</span> 圖片模式
+              :class="viewerMode === 'image' ? 'bg-indigo-600 hover:bg-indigo-500 text-white font-black shadow-lg shadow-indigo-600/40 ring-1 ring-indigo-400/40' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/70 font-medium'"
+              class="w-[110px] sm:w-[130px] py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 select-none active:scale-95">
+              <span class="text-sm sm:text-base shrink-0">🖼️</span>
+              <span class="truncate">圖片模式</span>
             </button>
             <button
               type="button"
               @click="switchToExecMode"
-              :class="viewerMode === 'exec' ? 'bg-indigo-600 text-white font-semibold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
-              class="px-2.5 py-1 rounded-lg transition flex items-center gap-1">
-              <span>▶</span> 逐行執行
+              :class="viewerMode === 'exec' ? 'bg-indigo-600 hover:bg-indigo-500 text-white font-black shadow-lg shadow-indigo-600/40 ring-1 ring-indigo-400/40' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/70 font-medium'"
+              class="w-[110px] sm:w-[130px] py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 select-none active:scale-95">
+              <span class="text-sm sm:text-base shrink-0">▶</span>
+              <span class="truncate">逐行執行</span>
             </button>
           </div>
 
-          <!-- Zoom 控制列 + 手勢說明 (僅在圖片模式顯示) -->
-          <div v-if="viewerMode === 'image'" class="flex items-center gap-1.5 shrink-0">
-            <button @click="zoomStep(-1)" title="縮小" class="w-7 h-7 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-sm font-bold transition border border-slate-700">－</button>
-            <span class="text-xs font-mono text-slate-300 w-12 text-center tabular-nums">{{ Math.round(zoomLevel * 100) }}%</span>
-            <button @click="zoomStep(1)" title="放大" class="w-7 h-7 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-sm font-bold transition border border-slate-700">＋</button>
-            <button @click="resetZoom" title="重設 100%" class="px-2 h-7 flex items-center rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs transition border border-slate-700">↺ 重設</button>
-            <button @click="showGestureHint = !showGestureHint" title="顯示縮放與手勢操作說明" class="px-2 h-7 flex items-center gap-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs transition border border-slate-700">
-              <span>💡</span>
-              <span class="hidden sm:inline">手勢說明</span>
+          <!-- 右側：Zoom 控制列 或 填空練習題標籤 + 關閉按鈕 ✕ -->
+          <div class="flex items-center gap-2.5 z-10 ml-auto">
+            <!-- Zoom 控制列 + 手勢說明 (僅在圖片模式顯示) -->
+            <div v-if="viewerMode === 'image'" class="flex items-center gap-1.5 shrink-0">
+              <button @click="zoomStep(-1)" title="縮小" class="w-7 h-7 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-sm font-bold transition border border-slate-700">－</button>
+              <span class="text-xs font-mono text-slate-300 w-12 text-center tabular-nums">{{ Math.round(zoomLevel * 100) }}%</span>
+              <button @click="zoomStep(1)" title="放大" class="w-7 h-7 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-sm font-bold transition border border-slate-700">＋</button>
+              <button @click="resetZoom" title="重設 100%" class="px-2 h-7 flex items-center rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs transition border border-slate-700">↺ 重設</button>
+              <button @click="showGestureHint = !showGestureHint" title="顯示縮放與手勢操作說明" class="px-2 h-7 flex items-center gap-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs transition border border-slate-700">
+                <span>💡</span>
+                <span class="hidden xl:inline">手勢說明</span>
+              </button>
+            </div>
+
+            <!-- 執行模式下的填空練習題提示 -->
+            <div v-else class="flex items-center gap-2 shrink-0">
+              <span v-if="hasBlanks" class="text-xs px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
+                ✏️ 填空練習題
+              </span>
+            </div>
+
+            <!-- 關閉按鈕 ✕ -->
+            <button
+              @click="closeImageModal"
+              class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition shrink-0 ml-1">
+              ✕
             </button>
           </div>
-          <!-- 執行模式下的語言與快捷提示 -->
-          <div v-else class="flex items-center gap-2 shrink-0">
-            <span v-if="hasBlanks" class="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-              ✏️ 填空練習題
-            </span>
-          </div>
-
-          <button
-            @click="closeImageModal"
-            class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition shrink-0">
-            ✕
-          </button>
         </div>
 
         <!-- 點擊手勢說明按鈕後出現的說明卡片 (獨立置於頂層，避免被 zoom-container 的 pointerdown 劫持) -->
@@ -712,7 +782,7 @@
         <!-- 圖片展示區 (僅在 viewerMode === 'image' 時顯示) -->
         <div
           v-if="viewerMode === 'image'"
-          class="zoom-container no-copy select-none flex-1 bg-slate-950"
+          class="zoom-container no-copy select-none flex-1 bg-slate-950 p-3 sm:p-5"
           :class="{ panning: isPanning }"
           ref="zoomContainerRef"
           @wheel.prevent="onWheel"
@@ -720,7 +790,7 @@
           @pointermove="onPointerMove"
           @pointerup="onPointerUp"
           @pointercancel="onPointerUp"
-          style="min-height: 320px; max-height: calc(92vh - 110px);">
+          style="min-height: 240px; max-height: calc(92vh - 110px);">
 
           <!-- 圖片載入中骨架屏動畫 -->
           <div v-if="isImgLoading" class="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm pointer-events-none">
@@ -1068,9 +1138,6 @@
             </div>
             
             <div class="flex items-center gap-3 text-xs font-mono">
-              <span v-if="totalSteps > 0" class="text-slate-400">
-                執行步驟: <strong class="text-indigo-400">{{ currentStepIndex + 1 }}</strong> / {{ totalSteps }}
-              </span>
               <span v-if="currentStdinLine > 0" class="px-2 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 font-semibold flex items-center gap-1 text-[11px]">
                 <span>📥</span> 已讀入至測資第 {{ currentStdinLine }} 行
               </span>
@@ -1146,49 +1213,93 @@
 
             <!-- 控制按鈕群 (md:col-span-6，2×3 六宮格排版，比例勻稱好按) -->
             <div class="md:col-span-6 flex flex-col gap-1.5 min-w-0 pl-0 md:pl-3">
-              <!-- 頂部資訊與控制列 (速度膠囊 + 清除中斷點 + 狀態) -->
-              <div class="flex items-center justify-between text-xs font-mono text-slate-400 gap-2 overflow-x-auto scrollbar-none pb-0.5">
-                <span class="flex items-center gap-1 shrink-0">
-                  <span>🕹️</span> 步進控制(Controls):
-                </span>
+              <!-- 頂部資訊與控制列 (左側 2 列資訊 + 右側第 3 欄按鈕：停止除錯/返回圖片，與下方按鈕精準等寬) -->
+              <div class="grid grid-cols-3 gap-2 sm:gap-2.5 w-full pb-1 select-none items-stretch">
+                <!-- 左側跨 2 欄 (col-span-2)：上下 2 列資訊與工具 -->
+                <div class="col-span-2 min-w-0 flex flex-col justify-between gap-1.5 py-0.5">
+                  <!-- Row 1: 即時進度與動態狀態 -->
+                  <div class="flex items-center justify-between text-xs font-mono text-slate-400 gap-2">
+                    <div class="flex items-center gap-2 shrink-0">
+                      <span v-if="totalSteps > 0" class="text-slate-300 font-medium">
+                        執行步驟: <strong class="text-indigo-400 font-bold">{{ currentStepIndex + 1 }}</strong> / {{ totalSteps }}
+                      </span>
+                      <span v-else class="text-indigo-400 font-sans">
+                        (準備就緒)
+                      </span>
+                    </div>
 
-                <div class="flex items-center gap-1.5 shrink-0">
-                  <!-- 三段速度微型切換膠囊 -->
-                  <div class="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[10px]">
-                    <button 
-                      type="button"
-                      @click="setAutoPlaySpeed(1500)"
-                      :class="autoPlaySpeed === 1500 ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
-                      class="px-1.5 py-0.5 rounded transition"
-                      title="慢速播放 (1.5秒/步)">0.5x</button>
-                    <button 
-                      type="button"
-                      @click="setAutoPlaySpeed(800)"
-                      :class="autoPlaySpeed === 800 ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
-                      class="px-1.5 py-0.5 rounded transition"
-                      title="標準速度 (0.8秒/步)">1x</button>
-                    <button 
-                      type="button"
-                      @click="setAutoPlaySpeed(300)"
-                      :class="autoPlaySpeed === 300 ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
-                      class="px-1.5 py-0.5 rounded transition"
-                      title="快速播放 (0.3秒/步)">2x</button>
+                    <!-- 動態狀態標籤 -->
+                    <div class="flex items-center gap-1.5 shrink-0">
+                      <span 
+                        :class="[
+                          'px-2 py-0.5 rounded text-[11px] font-semibold flex items-center gap-1 transition-all',
+                          isAutoPlaying ? 'bg-amber-950/80 text-amber-300 border border-amber-500/50 animate-pulse' :
+                          execFinished ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/50' :
+                          (currentStepIndex >= 0 ? 'bg-slate-800 text-slate-300 border border-slate-700' : 'bg-slate-800/60 text-slate-400')
+                        ]">
+                        <template v-if="isAutoPlaying">⚡ 自動執行中...</template>
+                        <template v-else-if="execFinished">✓ 已執行結束</template>
+                        <template v-else-if="currentStepIndex >= 0">● 逐步追蹤中</template>
+                        <template v-else>準備就緒</template>
+                      </span>
+                    </div>
                   </div>
 
-                  <!-- 清除中斷點按鈕 (僅在有中斷點時顯示) -->
-                  <button
-                    v-if="breakpoints.size > 0"
-                    type="button"
-                    @click="clearBreakpoints"
-                    class="text-[10px] text-rose-300 hover:text-white bg-rose-950/60 hover:bg-rose-900/80 px-2 py-0.5 rounded-lg border border-rose-500/40 flex items-center gap-1 transition active:scale-95 shadow-sm"
-                    title="清除所有已設定的中斷點">
-                    <span>🔴</span> 清除中斷點 ({{ breakpoints.size }})
-                  </button>
+                  <!-- Row 2: 步進控制標題 + 速度膠囊 + 清除中斷點 -->
+                  <div class="flex items-center justify-between text-xs font-mono text-slate-400 gap-2">
+                    <span class="flex items-center gap-1 shrink-0 text-slate-300 font-medium">
+                      <span>🕹️</span> 步進控制(Controls):
+                    </span>
+
+                    <div class="flex items-center gap-1.5 shrink-0">
+                      <!-- 三段速度微型切換膠囊 -->
+                      <div class="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[10px]">
+                        <button 
+                          type="button"
+                          @click="setAutoPlaySpeed(1500)"
+                          :class="autoPlaySpeed === 1500 ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+                          class="px-1.5 py-0.5 rounded transition"
+                          title="慢速播放 (1.5秒/步)">0.5x</button>
+                        <button 
+                          type="button"
+                          @click="setAutoPlaySpeed(800)"
+                          :class="autoPlaySpeed === 800 ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+                          class="px-1.5 py-0.5 rounded transition"
+                          title="標準速度 (0.8秒/步)">1x</button>
+                        <button 
+                          type="button"
+                          @click="setAutoPlaySpeed(300)"
+                          :class="autoPlaySpeed === 300 ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+                          class="px-1.5 py-0.5 rounded transition"
+                          title="快速播放 (0.3秒/步)">2x</button>
+                      </div>
+
+                      <!-- 清除中斷點按鈕 (僅在有中斷點時顯示) -->
+                      <button
+                        v-if="breakpoints.size > 0"
+                        type="button"
+                        @click="clearBreakpoints"
+                        class="text-[10px] text-rose-300 hover:text-white bg-rose-950/60 hover:bg-rose-900/80 px-2 py-0.5 rounded-lg border border-rose-500/40 flex items-center gap-1 transition active:scale-95 shadow-sm"
+                        title="清除所有已設定的中斷點">
+                        <span>🔴</span> 清除中斷點 ({{ breakpoints.size }})
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                <span class="text-[11px] text-slate-500 shrink-0">
-                  {{ isAutoPlaying ? '⚡ 自動執行中...' : (execFinished ? '✓ 已執行結束' : (currentStepIndex >= 0 ? '逐步追蹤中' : '準備就緒')) }}
-                </span>
+                <!-- 右側第 3 欄按鈕 (col-span-1，與下方自動執行/執行到底精準等寬)：[ ⏹️ 停止除錯 / 返回圖片 ] -->
+                <button
+                  type="button"
+                  @click="returnToImageMode"
+                  class="col-span-1 w-full h-full min-h-[54px] rounded-2xl bg-gradient-to-b from-slate-800 to-rose-950/40 hover:from-rose-900 hover:to-rose-800 text-slate-300 hover:text-white border border-rose-500/40 hover:border-rose-400 shadow-md hover:shadow-lg hover:shadow-rose-600/35 transition-all flex items-center justify-center gap-2 sm:gap-2.5 px-2 active:scale-95 group select-none"
+                  :class="execFinished ? 'ring-2 ring-amber-400/50 animate-pulse' : ''"
+                  title="結束當前逐步除錯，切換回題目原圖片檢視">
+                  <span class="text-xl sm:text-2xl leading-none transition-transform group-hover:scale-110 shrink-0">⏹️</span>
+                  <div class="flex flex-col items-start justify-center leading-tight">
+                    <span class="text-xs sm:text-sm font-bold tracking-tight text-slate-300 group-hover:text-white transition-colors">停止除錯</span>
+                    <span class="text-xs sm:text-sm font-bold tracking-tight text-slate-300 group-hover:text-white transition-colors">返回圖片</span>
+                  </div>
+                </button>
               </div>
 
               <!-- 2×3 六宮格步進按鈕 -->
@@ -1618,9 +1729,9 @@
       <div class="relative bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-6xl xl:max-w-7xl h-[92vh] flex flex-col shadow-2xl overflow-hidden transition-all duration-200">
         
         <!-- 頂部工具列 (標題、雙模標籤、語言切換、🪄魔術棒、📥匯出、換行切換、關閉) -->
-        <div class="px-5 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between bg-slate-900/95 gap-3 shrink-0">
+        <div class="relative px-5 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/95 gap-3 shrink-0 min-h-[60px]">
           <!-- 左側：標題與目前模式徽章 -->
-          <div class="flex items-center space-x-2.5 min-w-0">
+          <div class="flex items-center space-x-2.5 min-w-0 z-10">
             <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-purple-500 to-indigo-600 flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0">
               <span class="text-base">🧪</span>
             </div>
@@ -1629,35 +1740,39 @@
                 <span class="font-bold text-sm text-white tracking-tight">自由練習沙盒</span>
                 <span 
                   :class="sandboxMode === 'editor' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'"
-                  class="text-[11px] font-mono px-2 py-0.5 rounded-full border font-semibold flex items-center gap-1">
+                  class="text-[11px] font-mono px-2 py-0.5 rounded-full border font-semibold hidden md:flex items-center gap-1">
                   <span>{{ sandboxMode === 'editor' ? '⚡ 輕量編譯模式' : '🔍 視覺化除錯模式' }}</span>
                 </span>
               </div>
             </div>
           </div>
 
-          <!-- 中間：語言切換膠囊按鈕 (Python / C++) -->
-          <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs shrink-0">
+          <!-- 中央：語言切換膠囊按鈕 (Python / C++) —— 絕對水平置中，雙鍵嚴格等寬對稱，中線精準契合下層分界 -->
+          <div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 sm:gap-1.5 bg-slate-950/90 p-1 sm:p-1.5 rounded-2xl border border-slate-700/80 shadow-inner z-10">
             <button
               type="button"
               @click="switchSandboxLang('python')"
-              :class="sandboxLang === 'python' ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
-              class="px-3 py-1 rounded-lg transition flex items-center gap-1.5"
-              :disabled="sandboxMode === 'debug'">
-              <span>🐍</span> Python (Pyodide)
+              :class="sandboxLang === 'python' ? 'bg-indigo-600 hover:bg-indigo-500 text-white font-black shadow-lg shadow-indigo-600/40 ring-1 ring-indigo-400/40' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/70 font-medium'"
+              class="w-[145px] sm:w-[180px] py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 select-none active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+              :disabled="sandboxMode === 'debug'"
+              title="切換至 Python (Pyodide 執行引擎)">
+              <span class="text-sm sm:text-base shrink-0">🐍</span>
+              <span class="truncate">Python (Pyodide)</span>
             </button>
             <button
               type="button"
               @click="switchSandboxLang('cpp')"
-              :class="sandboxLang === 'cpp' ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
-              class="px-3 py-1 rounded-lg transition flex items-center gap-1.5"
-              :disabled="sandboxMode === 'debug'">
-              <span>⚡</span> C++ (JSCPP)
+              :class="sandboxLang === 'cpp' ? 'bg-indigo-600 hover:bg-indigo-500 text-white font-black shadow-lg shadow-indigo-600/40 ring-1 ring-indigo-400/40' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/70 font-medium'"
+              class="w-[145px] sm:w-[180px] py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 select-none active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+              :disabled="sandboxMode === 'debug'"
+              title="切換至 C++ (JSCPP 執行引擎)">
+              <span class="text-sm sm:text-base shrink-0">⚡</span>
+              <span class="truncate">C++ (JSCPP)</span>
             </button>
           </div>
 
           <!-- 右側工具快捷鍵：魔術棒美化、檔案匯出、換行開關、關閉 -->
-          <div class="flex items-center space-x-2 shrink-0">
+          <div class="flex items-center space-x-2 shrink-0 z-10 ml-auto">
             <!-- 🪄 魔術棒按鈕 (僅在 C++ 編輯模式可用) -->
             <button
               v-show="sandboxMode === 'editor' && sandboxLang === 'cpp'"
@@ -2051,22 +2166,9 @@
             </div>
             
             <div class="flex items-center gap-3 text-xs font-mono">
-              <span v-if="sandboxMode === 'debug' && sandboxTotalSteps > 0" class="text-slate-400">
-                執行步驟: <strong class="text-indigo-400">{{ sandboxCurrentStepIndex + 1 }}</strong> / {{ sandboxTotalSteps }}
-              </span>
-              <span v-else-if="sandboxMode === 'debug' && sandboxCurrentStepIndex === -1" class="text-indigo-400 font-sans">
-                (準備就緒)
-              </span>
               <span v-if="sandboxMode === 'debug' && sandboxCurrentStdinLine > 0" class="px-2 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 font-semibold flex items-center gap-1 text-[11px]">
                 <span>📥</span> 已讀入至測資第 {{ sandboxCurrentStdinLine }} 行
               </span>
-              <button
-                v-if="sandboxMode === 'debug'"
-                type="button"
-                @click="returnToSandboxEditor"
-                class="px-2.5 py-0.5 rounded bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/40 font-bold text-xs transition flex items-center gap-1">
-                <span>✏️</span> 返回編輯
-              </button>
             </div>
           </div>
 
@@ -2140,54 +2242,102 @@
 
             <!-- ========== 右下：控制按鈕群 (等高 154px，與左側精準對齊) ========== -->
             <div class="md:col-span-6 flex flex-col gap-1.5 min-w-0 pl-0 md:pl-3">
-              <!-- 頂部資訊與控制列 (速度膠囊 + 清除中斷點 + 狀態) -->
-              <div class="flex items-center justify-between text-xs font-mono text-slate-400 gap-2 overflow-x-auto scrollbar-none pb-0.5">
-                <span class="flex items-center gap-1 shrink-0">
-                  <span>🕹️</span> {{ sandboxMode === 'editor' ? '執行動作(Actions):' : '步進控制(Controls):' }}
-                </span>
+              <!-- 除錯模式頂部資訊與控制列 (左側 2 列資訊 + 右側第 3 欄按鈕：停止除錯/返回編輯，與下方按鈕精準等寬) -->
+              <div v-if="sandboxMode === 'debug'" class="grid grid-cols-3 gap-2 sm:gap-2.5 w-full pb-1 select-none items-stretch">
+                <!-- 左側跨 2 欄 (col-span-2)：上下 2 列資訊與工具 -->
+                <div class="col-span-2 min-w-0 flex flex-col justify-between gap-1.5 py-0.5">
+                  <!-- Row 1: 即時進度與動態狀態 -->
+                  <div class="flex items-center justify-between text-xs font-mono text-slate-400 gap-2">
+                    <div class="flex items-center gap-2 shrink-0">
+                      <span v-if="sandboxTotalSteps > 0" class="text-slate-300 font-medium">
+                        執行步驟: <strong class="text-indigo-400 font-bold">{{ sandboxCurrentStepIndex + 1 }}</strong> / {{ sandboxTotalSteps }}
+                      </span>
+                      <span v-else-if="sandboxCurrentStepIndex === -1" class="text-indigo-400 font-sans">
+                        (準備就緒)
+                      </span>
+                    </div>
 
-                <!-- 僅在除錯模式顯示速度與清除中斷點 -->
-                <div v-if="sandboxMode === 'debug'" class="flex items-center gap-1.5 shrink-0">
-                  <!-- 三段速度微型切換膠囊 -->
-                  <div class="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[10px]">
-                    <button 
-                      type="button"
-                      @click="setAutoPlaySpeed(1500)"
-                      :class="autoPlaySpeed === 1500 ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
-                      class="px-1.5 py-0.5 rounded transition"
-                      title="慢速播放 (1.5秒/步)">0.5x</button>
-                    <button 
-                      type="button"
-                      @click="setAutoPlaySpeed(800)"
-                      :class="autoPlaySpeed === 800 ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
-                      class="px-1.5 py-0.5 rounded transition"
-                      title="標準速度 (0.8秒/步)">1x</button>
-                    <button 
-                      type="button"
-                      @click="setAutoPlaySpeed(300)"
-                      :class="autoPlaySpeed === 300 ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
-                      class="px-1.5 py-0.5 rounded transition"
-                      title="快速播放 (0.3秒/步)">2x</button>
+                    <!-- 動態狀態標籤 (原汁原味且更鮮明) -->
+                    <div class="flex items-center gap-1.5 shrink-0">
+                      <span 
+                        :class="[
+                          'px-2 py-0.5 rounded text-[11px] font-semibold flex items-center gap-1 transition-all',
+                          sandboxIsAutoPlaying ? 'bg-amber-950/80 text-amber-300 border border-amber-500/50 animate-pulse' :
+                          sandboxExecFinished ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/50' :
+                          (sandboxCurrentStepIndex >= 0 ? 'bg-slate-800 text-slate-300 border border-slate-700' : 'bg-slate-800/60 text-slate-400')
+                        ]">
+                        <template v-if="sandboxIsAutoPlaying">⚡ 自動執行中...</template>
+                        <template v-else-if="sandboxExecFinished">✓ 已執行結束</template>
+                        <template v-else-if="sandboxCurrentStepIndex >= 0">● 逐步追蹤中</template>
+                        <template v-else>準備就緒</template>
+                      </span>
+                    </div>
                   </div>
 
-                  <!-- 清除中斷點按鈕 (僅在有中斷點時顯示) -->
-                  <button
-                    v-if="sandboxBreakpoints.size > 0"
-                    type="button"
-                    @click="clearSandboxBreakpoints"
-                    class="text-[10px] text-rose-300 hover:text-white bg-rose-950/60 hover:bg-rose-900/80 px-2 py-0.5 rounded-lg border border-rose-500/40 flex items-center gap-1 transition active:scale-95 shadow-sm"
-                    title="清除所有已設定的中斷點">
-                    <span>🔴</span> 清除中斷點 ({{ sandboxBreakpoints.size }})
-                  </button>
+                  <!-- Row 2: 步進控制標題 + 速度膠囊 + 清除中斷點 -->
+                  <div class="flex items-center justify-between text-xs font-mono text-slate-400 gap-2">
+                    <span class="flex items-center gap-1 shrink-0 text-slate-300 font-medium">
+                      <span>🕹️</span> 步進控制(Controls):
+                    </span>
+
+                    <div class="flex items-center gap-1.5 shrink-0">
+                      <!-- 三段速度微型切換膠囊 -->
+                      <div class="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-[10px]">
+                        <button 
+                          type="button"
+                          @click="setAutoPlaySpeed(1500)"
+                          :class="autoPlaySpeed === 1500 ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+                          class="px-1.5 py-0.5 rounded transition"
+                          title="慢速播放 (1.5秒/步)">0.5x</button>
+                        <button 
+                          type="button"
+                          @click="setAutoPlaySpeed(800)"
+                          :class="autoPlaySpeed === 800 ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+                          class="px-1.5 py-0.5 rounded transition"
+                          title="標準速度 (0.8秒/步)">1x</button>
+                        <button 
+                          type="button"
+                          @click="setAutoPlaySpeed(300)"
+                          :class="autoPlaySpeed === 300 ? 'bg-indigo-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-slate-200'"
+                          class="px-1.5 py-0.5 rounded transition"
+                          title="快速播放 (0.3秒/步)">2x</button>
+                      </div>
+
+                      <!-- 清除中斷點按鈕 (僅在有中斷點時顯示) -->
+                      <button
+                        v-if="sandboxBreakpoints.size > 0"
+                        type="button"
+                        @click="clearSandboxBreakpoints"
+                        class="text-[10px] text-rose-300 hover:text-white bg-rose-950/60 hover:bg-rose-900/80 px-2 py-0.5 rounded-lg border border-rose-500/40 flex items-center gap-1 transition active:scale-95 shadow-sm"
+                        title="清除所有已設定的中斷點">
+                        <span>🔴</span> 清除中斷點 ({{ sandboxBreakpoints.size }})
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
+                <!-- 右側第 3 欄按鈕 (col-span-1，與下方自動執行/執行到底精準等寬)：[ ⏹️ 停止除錯 / 返回編輯 ] -->
+                <button
+                  type="button"
+                  @click="returnToSandboxEditor"
+                  class="col-span-1 w-full h-full min-h-[54px] rounded-2xl bg-gradient-to-b from-slate-800 to-rose-950/40 hover:from-rose-900 hover:to-rose-800 text-slate-300 hover:text-white border border-rose-500/40 hover:border-rose-400 shadow-md hover:shadow-lg hover:shadow-rose-600/35 transition-all flex items-center justify-center gap-2 sm:gap-2.5 px-2 active:scale-95 group select-none"
+                  :class="sandboxExecFinished ? 'ring-2 ring-amber-400/50 animate-pulse' : ''"
+                  title="停止除錯並返回編輯程式碼">
+                  <span class="text-xl sm:text-2xl leading-none transition-transform group-hover:scale-110 shrink-0">⏹️</span>
+                  <div class="flex flex-col items-start justify-center leading-tight">
+                    <span class="text-xs sm:text-sm font-bold tracking-tight text-slate-300 group-hover:text-white transition-colors">停止除錯</span>
+                    <span class="text-xs sm:text-sm font-bold tracking-tight text-slate-300 group-hover:text-white transition-colors">返回編輯</span>
+                  </div>
+                </button>
+              </div>
+
+              <!-- 編輯模式頂部資訊與狀態列 -->
+              <div v-else class="flex items-center justify-between text-xs font-mono text-slate-400 gap-2 pb-0.5 select-none">
+                <span class="flex items-center gap-1 shrink-0">
+                  <span>🕹️</span> 執行動作(Actions):
+                </span>
                 <span class="text-[11px] text-slate-500 shrink-0">
-                  <template v-if="sandboxMode === 'editor'">
-                    {{ sandboxExecuting ? '⏳ 執行中...' : '準備就緒' }}
-                  </template>
-                  <template v-else>
-                    {{ sandboxIsAutoPlaying ? '⚡ 自動執行中...' : (sandboxExecFinished ? '✓ 已執行結束' : (sandboxCurrentStepIndex === -1 ? '準備就緒' : '逐步追蹤中')) }}
-                  </template>
+                  {{ sandboxExecuting ? '⏳ 執行中...' : '準備就緒' }}
                 </span>
               </div>
 
@@ -3224,6 +3374,16 @@ print("Result:", calculate_sum(10))`
             showToast("此題無存儲原始碼，無法逐行執行", "error");
             return;
           }
+        };
+
+        // 🖼️ 結束除錯返回圖片模式
+        const returnToImageMode = () => {
+          stopAutoPlay();
+          breakpoints.value.clear();
+          breakpoints.value = new Set();
+          showWatchPanel.value = false;
+          viewerMode.value = 'image';
+          execError.value = null;
         };
 
         // 智能錯誤解析與教學指引產生器 (過濾堆疊，提取行號與友善中文提示)
@@ -5599,8 +5759,126 @@ def __run_with_trace(user_code_str, stdin_str):
           }
         };
 
+        // 老師修改題號相關狀態 (Inline 就地編輯)
+        const editingProblemKey = ref(null);
+        const editingProblemInputVal = ref('');
+        const editProblemInputRef = ref(null);
+
+        const startEditProblemNo = (prob) => {
+          if (!userInfo.value.isTeacher) return;
+          editingProblemKey.value = (prob.course || '') + '_' + prob.problemNo;
+          editingProblemInputVal.value = prob.problemNo;
+          nextTick(() => {
+            if (editProblemInputRef.value) {
+              editProblemInputRef.value.focus();
+              editProblemInputRef.value.select();
+            }
+          });
+        };
+
+        const cancelEditProblemNo = () => {
+          editingProblemKey.value = null;
+          editingProblemInputVal.value = '';
+        };
+
+        const saveEditedProblemNo = (prob) => {
+          if (!userInfo.value.isTeacher) return;
+          const oldNo = prob.problemNo;
+          const newNo = (editingProblemInputVal.value || '').trim();
+
+          if (!newNo) {
+            showToast("新題號不可為空！", "error");
+            return;
+          }
+          if (newNo === oldNo) {
+            cancelEditProblemNo();
+            return;
+          }
+
+          // 檢查新題號是否已存在於目前課程中 (不分大小寫)
+          const isDuplicate = rawProblems.value.some(p => 
+            p.course === prob.course && 
+            p.problemNo.toLowerCase() === newNo.toLowerCase() &&
+            p.problemNo !== oldNo
+          );
+          if (isDuplicate) {
+            showToast(`題號【${newNo}】已存在於此課程中，無法重複使用！`, "error");
+            return;
+          }
+
+          // 樂觀更新前端狀態
+          cancelEditProblemNo();
+          prob.problemNo = newNo;
+          const target = rawProblems.value.find(p => p.course === prob.course && p.problemNo === oldNo);
+          if (target) {
+            target.problemNo = newNo;
+          }
+
+          showToast(`題號已修正為【${newNo}】 ✓`, "success");
+
+          if (typeof google !== 'undefined' && google.script && google.script.run) {
+            google.script.run
+              .withSuccessHandler((res) => {
+                showToast(`雲端題號已成功更新為【${res.newProblemNo || newNo}】`, "success");
+              })
+              .withFailureHandler((err) => {
+                // 失敗復原
+                prob.problemNo = oldNo;
+                if (target) {
+                  target.problemNo = oldNo;
+                }
+                showToast("修改題號失敗: " + err.message, "error");
+              })
+              .renameProblemNo(prob.course, oldNo, newNo);
+          } else {
+            console.log(`本地模擬：題號【${oldNo}】已更名為【${newNo}】`);
+          }
+        };
+
         onMounted(() => {
           init();
+          window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+              // 0. 若正處於題號修改狀態，優先取消編輯題號
+              if (editingProblemKey.value) {
+                cancelEditProblemNo();
+                return;
+              }
+              // 1. 若手勢說明提示浮層顯示中，優先關閉手勢說明
+              if (showGestureHint.value) {
+                showGestureHint.value = false;
+                return;
+              }
+              // 2. 自由沙盒 Modal (除錯模式退回編輯；編輯模式退回首頁)
+              if (showSandboxModal.value) {
+                if (sandboxMode.value === 'debug') {
+                  returnToSandboxEditor();
+                } else {
+                  closeSandboxModal();
+                }
+                return;
+              }
+              // 3. 題庫檢視 Modal (逐行除錯模式退回圖片檢視；圖片模式退回首頁)
+              if (activeProblem.value) {
+                if (viewerMode.value === 'exec') {
+                  returnToImageMode();
+                } else if (viewerMode.value === 'image') {
+                  closeImageModal();
+                }
+                return;
+              }
+              // 4. 上傳題庫 Modal
+              if (showUploadModal.value) {
+                showUploadModal.value = false;
+                return;
+              }
+              // 5. 課程管理 Modal
+              if (showCourseModal.value) {
+                showCourseModal.value = false;
+                return;
+              }
+            }
+          });
         });
 
         return {
@@ -5665,6 +5943,12 @@ def __run_with_trace(user_code_str, stdin_str):
           confirmDeleteChapter,
           toggleProblemVisibility,
           confirmShowAllProblems,
+          editingProblemKey,
+          editingProblemInputVal,
+          editProblemInputRef,
+          startEditProblemNo,
+          cancelEditProblemNo,
+          saveEditedProblemNo,
           moveProblem,
           openCourseModal,
           createCourse,
@@ -5673,6 +5957,7 @@ def __run_with_trace(user_code_str, stdin_str):
           // 逐行執行器與視覺化相關狀態及方法
           viewerMode,
           switchToExecMode,
+          returnToImageMode,
           copyProblemCode,
           hasBlanks,
           hasFilledAllBlanks,

@@ -685,3 +685,85 @@ function batchShowAllProblems(course) {
     updatedCount: updatedCount
   };
 }
+
+/**
+ * 老師修正題目題號 (Inline 就地編輯)
+ * @param {string} course 課程名稱
+ * @param {string} oldProblemNo 舊題號
+ * @param {string} newProblemNo 新題號
+ */
+function renameProblemNo(course, oldProblemNo, newProblemNo) {
+  assertTeacher();
+  course = (course || "").trim();
+  oldProblemNo = (oldProblemNo || "").trim();
+  newProblemNo = (newProblemNo || "").trim();
+
+  if (!course || !oldProblemNo) {
+    throw new Error("課程與原始題號不可為空！");
+  }
+  if (!newProblemNo) {
+    throw new Error("新題號不可為空！");
+  }
+  if (oldProblemNo === newProblemNo) {
+    return { success: true, course: course, oldProblemNo: oldProblemNo, newProblemNo: newProblemNo, unchanged: true };
+  }
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_PROBLEMS);
+  if (!sheet) throw new Error("找不到題目資料表");
+
+  var data = sheet.getDataRange().getValues();
+  var targetRowIndex = -1;
+  var targetChapter = "";
+  var targetFileId = "";
+
+  // 檢查同課程下新題號是否已存在，並尋找原始題號列
+  for (var i = 1; i < data.length; i++) {
+    var rCourse = data[i][0] ? data[i][0].toString().trim() : "";
+    var rProbNo = data[i][2] ? data[i][2].toString().trim() : "";
+
+    if (rCourse === course) {
+      if (rProbNo.toLowerCase() === newProblemNo.toLowerCase()) {
+        throw new Error("題號【" + newProblemNo + "】已存在於此課程中，無法重複使用！");
+      }
+      if (rProbNo === oldProblemNo) {
+        targetRowIndex = i + 1;
+        targetChapter = data[i][1] ? data[i][1].toString().trim() : "未分類章節";
+        targetFileId = data[i][3] ? data[i][3].toString().trim() : "";
+      }
+    }
+  }
+
+  if (targetRowIndex === -1) {
+    throw new Error("找不到原始題目【" + oldProblemNo + "】，無法修改題號");
+  }
+
+  // 1. 更新試算表第 3 欄 (C 欄 ProblemNo)
+  sheet.getRange(targetRowIndex, 3).setValue(newProblemNo);
+
+  // 2. 若 Google Drive 檔案存在，同步重命名檔案
+  if (targetFileId) {
+    try {
+      var file = DriveApp.getFileById(targetFileId);
+      var oldName = file.getName();
+      var ext = ".png";
+      var dotIdx = oldName.lastIndexOf(".");
+      if (dotIdx !== -1) {
+        ext = oldName.substring(dotIdx);
+      }
+      var newFileName = course + "_" + targetChapter + "_" + newProblemNo + ext;
+      file.setName(newFileName);
+    } catch (e) {
+      Logger.log("重新命名 Drive 檔案提示: " + e.message);
+    }
+  }
+
+  clearSystemCache();
+
+  return {
+    success: true,
+    course: course,
+    oldProblemNo: oldProblemNo,
+    newProblemNo: newProblemNo
+  };
+}
