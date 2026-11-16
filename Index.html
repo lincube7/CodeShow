@@ -287,9 +287,14 @@
     .var-changed-flash {
       animation: flash-orange 1.2s ease-out;
     }
+    .array-cell-changed {
+      position: relative;
+      z-index: 10;
+      box-shadow: inset 0 0 0 1.5px #f59e0b !important;
+    }
     @keyframes flash-orange {
-      0%   { background-color: rgba(249, 115, 22, 0.5); transform: scale(1.04); }
-      100% { background-color: transparent; transform: scale(1); }
+      0%   { background-color: rgba(249, 115, 22, 0.4); }
+      100% { background-color: transparent; }
     }
     .blank-fill-input {
       background: rgba(15, 23, 42, 0.95);
@@ -1024,6 +1029,9 @@
                         <span class="text-[10px] px-1 py-0.2 rounded bg-slate-800 text-slate-400">
                           {{ v.type }}
                         </span>
+                        <span v-if="v.isUninitialized" class="text-[9px] px-1.5 py-0.2 rounded border font-sans" :class="v.isCustomUninit ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-rose-500/20 text-rose-300 border-rose-500/40'" :title="v.isCustomUninit ? '使用者自訂模擬之記憶體初值（點擊可修改）' : '此區域變數尚未賦予初值，當前值為記憶體隨機殘留值（未定義行為 UB），點擊可自訂模擬'">
+                          {{ v.isCustomUninit ? '⚠️ 模擬初值 (自訂)' : '⚠️ 未設初值 (隨機殘留值)' }}
+                        </span>
                       </div>
                       <span v-if="v.changed" class="text-[10px] font-sans px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30">
                         剛更新
@@ -1031,8 +1039,53 @@
                     </div>
 
                     <!-- 1. 純量純值 (int, float, str, bool 等) -->
-                    <div v-if="v.category === 'scalar'" class="text-emerald-400 font-bold truncate">
-                      {{ v.value }}
+                    <div v-if="v.category === 'scalar'" class="flex items-center gap-1.5 flex-wrap">
+                      <!-- 編輯中：自訂模擬初值微型輸入框 -->
+                      <div v-if="editingUninitVar === v.name" class="flex items-center gap-1 py-0.5" @click.stop>
+                        <input 
+                          :ref="el => { if (el) editUninitInputRef = el; }"
+                          type="number" 
+                          v-model="editingUninitVal" 
+                          @click.stop
+                          @keydown.enter.prevent="saveCustomUninitVal(v.name)" 
+                          @keydown.esc.prevent="cancelEditUninitVal" 
+                          class="w-24 px-1.5 py-0.5 font-mono text-xs font-bold rounded bg-slate-900 border border-amber-400 text-amber-200 focus:outline-none focus:ring-1 focus:ring-amber-400 shadow-sm"
+                          placeholder="輸入模擬初值" />
+                        <button 
+                          type="button" 
+                          @click.stop="saveCustomUninitVal(v.name)" 
+                          title="確認模擬此初值 (Enter)"
+                          class="w-5 h-5 flex items-center justify-center rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold shadow transition active:scale-95">
+                          ✓
+                        </button>
+                        <button 
+                          type="button" 
+                          @click.stop="cancelEditUninitVal" 
+                          title="取消 (Esc)"
+                          class="w-5 h-5 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white text-[11px] font-bold border border-slate-600 transition active:scale-95">
+                          ✕
+                        </button>
+                      </div>
+
+                      <!-- 正常顯示狀態 -->
+                      <template v-else>
+                        <span 
+                          class="text-emerald-400 font-bold truncate transition"
+                          :class="v.isUninitialized ? 'cursor-pointer hover:underline hover:text-amber-300' : ''"
+                          :title="v.isUninitialized ? '點擊修改此變數的記憶體模擬初值（例如設為 0 測試邏輯）' : ''"
+                          @click.stop="v.isUninitialized ? startEditUninitVal(v.name, v.value) : null">
+                          {{ v.value }}
+                        </span>
+                        <button
+                          v-if="v.isUninitialized"
+                          type="button"
+                          @click.stop="startEditUninitVal(v.name, v.value)"
+                          title="點擊修改此變數的記憶體初值（例如設為 0 測試）"
+                          class="px-1.5 py-0.2 rounded bg-slate-800 hover:bg-amber-600/70 text-slate-400 hover:text-white text-[10px] transition border border-slate-700 flex items-center gap-0.5 active:scale-95">
+                          <span>✏️</span>
+                          <span class="text-[9px]">改初值</span>
+                        </button>
+                      </template>
                     </div>
 
                     <!-- 2. 1D 一維陣列 / List -->
@@ -1051,7 +1104,7 @@
                               v-for="(item, idx) in v.value" 
                               :key="idx" 
                               class="px-2 py-1 text-emerald-400 bg-slate-900/90 border border-slate-800 rounded"
-                              :class="isCellChanged(v.name, idx) ? 'border-amber-500 bg-amber-500/20 text-amber-300 var-changed-flash' : ''">
+                              :class="isCellChanged(v.name, idx) ? 'bg-amber-500/20 text-amber-300 var-changed-flash array-cell-changed' : ''">
                               {{ item }}
                             </td>
                           </tr>
@@ -1079,7 +1132,7 @@
                               v-for="(val, cIdx) in row" 
                               :key="cIdx"
                               class="px-2.5 py-1 font-bold text-emerald-400 bg-slate-900/90 border border-slate-800 rounded"
-                              :class="is2DCellChanged(v.name, rIdx, cIdx) ? 'border-amber-500 bg-amber-500/25 text-amber-300 var-changed-flash' : ''">
+                              :class="is2DCellChanged(v.name, rIdx, cIdx) ? 'bg-amber-500/25 text-amber-300 var-changed-flash array-cell-changed' : ''">
                               {{ val }}
                             </td>
                           </tr>
@@ -2051,6 +2104,9 @@
                           <span class="text-[10px] px-1 py-0.2 rounded bg-slate-800 text-slate-400">
                             {{ v.type }}
                           </span>
+                          <span v-if="v.isUninitialized" class="text-[9px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-sans" title="此區域變數尚未賦予初值，當前值為記憶體隨機殘留值（未定義行為 UB），可能是任意數值包含 0">
+                            ⚠️ 未設初值 (隨機殘留值)
+                          </span>
                         </div>
                         <span v-if="v.changed" class="text-[10px] font-sans px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-semibold border border-amber-500/30">
                           剛更新
@@ -2058,8 +2114,53 @@
                       </div>
 
                       <!-- 1. 純量純值 -->
-                      <div v-if="v.category === 'scalar'" class="text-emerald-400 font-bold truncate">
-                        {{ v.value }}
+                      <div v-if="v.category === 'scalar'" class="flex items-center gap-1.5 flex-wrap">
+                        <!-- 編輯中：自訂模擬初值微型輸入框 -->
+                        <div v-if="sandboxEditingUninitVar === v.name" class="flex items-center gap-1 py-0.5" @click.stop>
+                          <input 
+                            :ref="el => { if (el) sandboxEditUninitInputRef = el; }"
+                            type="number" 
+                            v-model="sandboxEditingUninitVal" 
+                            @click.stop
+                            @keydown.enter.prevent="saveSandboxCustomUninitVal(v.name)" 
+                            @keydown.esc.prevent="cancelSandboxEditUninitVal" 
+                            class="w-24 px-1.5 py-0.5 font-mono text-xs font-bold rounded bg-slate-900 border border-amber-400 text-amber-200 focus:outline-none focus:ring-1 focus:ring-amber-400 shadow-sm"
+                            placeholder="輸入模擬初值" />
+                          <button 
+                            type="button" 
+                            @click.stop="saveSandboxCustomUninitVal(v.name)" 
+                            title="確認模擬此初值 (Enter)"
+                            class="w-5 h-5 flex items-center justify-center rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold shadow transition active:scale-95">
+                            ✓
+                          </button>
+                          <button 
+                            type="button" 
+                            @click.stop="cancelSandboxEditUninitVal" 
+                            title="取消 (Esc)"
+                            class="w-5 h-5 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white text-[11px] font-bold border border-slate-600 transition active:scale-95">
+                            ✕
+                          </button>
+                        </div>
+
+                        <!-- 正常顯示狀態 -->
+                        <template v-else>
+                          <span 
+                            class="text-emerald-400 font-bold truncate transition"
+                            :class="v.isUninitialized ? 'cursor-pointer hover:underline hover:text-amber-300' : ''"
+                            :title="v.isUninitialized ? '點擊修改此變數的記憶體模擬初值（例如設為 0 測試邏輯）' : ''"
+                            @click.stop="v.isUninitialized ? startSandboxEditUninitVal(v.name, v.value) : null">
+                            {{ v.value }}
+                          </span>
+                          <button
+                            v-if="v.isUninitialized"
+                            type="button"
+                            @click.stop="startSandboxEditUninitVal(v.name, v.value)"
+                            title="點擊修改此變數的記憶體初值（例如設為 0 測試）"
+                            class="px-1.5 py-0.2 rounded bg-slate-800 hover:bg-amber-600/70 text-slate-400 hover:text-white text-[10px] transition border border-slate-700 flex items-center gap-0.5 active:scale-95">
+                            <span>✏️</span>
+                            <span class="text-[9px]">改初值</span>
+                          </button>
+                        </template>
                       </div>
 
                       <!-- 2. 1D 一維陣列 -->
@@ -2078,7 +2179,7 @@
                                 v-for="(item, idx) in v.value" 
                                 :key="idx" 
                                 class="px-2 py-1 text-emerald-400 bg-slate-900/90 border border-slate-800 rounded"
-                                :class="isSandboxCellChanged(v.name, idx) ? 'border-amber-500 bg-amber-500/20 text-amber-300 var-changed-flash' : ''">
+                                :class="isSandboxCellChanged(v.name, idx) ? 'bg-amber-500/20 text-amber-300 var-changed-flash array-cell-changed' : ''">
                                 {{ item }}
                               </td>
                             </tr>
@@ -2106,7 +2207,7 @@
                                 v-for="(val, cIdx) in row" 
                                 :key="cIdx"
                                 class="px-2.5 py-1 font-bold text-emerald-400 bg-slate-900/90 border border-slate-800 rounded"
-                                :class="isSandbox2DCellChanged(v.name, rIdx, cIdx) ? 'border-amber-500 bg-amber-500/25 text-amber-300 var-changed-flash' : ''">
+                                :class="isSandbox2DCellChanged(v.name, rIdx, cIdx) ? 'bg-amber-500/25 text-amber-300 var-changed-flash array-cell-changed' : ''">
                                 {{ val }}
                               </td>
                             </tr>
@@ -2651,6 +2752,28 @@
         const currentExecutingLine = ref(null);
         const variableList = ref([]);
         const prevVarSnapshots = ref({});
+        // 未初始化變數之使用者自訂模擬初值覆寫 (題庫除錯模式)
+        const customUninitOverrides = ref({});
+        const editingUninitVar = ref(null);
+        const editingUninitVal = ref('');
+        const editUninitInputRef = ref(null);
+
+        const startEditUninitVal = (name, val) => {
+          editingUninitVar.value = name;
+          editingUninitVal.value = (val !== undefined && val !== null) ? val : 0;
+          nextTick(() => {
+            if (editUninitInputRef.value) {
+              editUninitInputRef.value.focus();
+              editUninitInputRef.value.select();
+            }
+          });
+        };
+
+        const cancelEditUninitVal = () => {
+          editingUninitVar.value = null;
+          editingUninitVal.value = '';
+        };
+
         const blankAnswers = ref([]);
         const hasBlanks = ref(false);
         const execError = ref(null);
@@ -3243,6 +3366,8 @@ print("Result:", calculate_sum(10))`
           blankAnswers.value = [];
           stdinInput.value = '';
           execError.value = null;
+          customUninitOverrides.value = {};
+          cancelEditUninitVal();
           currentStdinLine.value = 0;
           showRawStdin.value = false;
 
@@ -3326,6 +3451,37 @@ print("Result:", calculate_sum(10))`
           });
         };
 
+        // 檢測某行 C++ 程式碼是否對指定變數進行顯式賦值 (cin、=、+=、++、-- 等)
+        const isExplicitlyAssigned = (lineCode, varName) => {
+          if (!lineCode || !varName) return false;
+          const trimmed = lineCode.trim();
+          if (trimmed.startsWith('//') || trimmed.startsWith('/*')) return false;
+          const cinRegex = new RegExp(`\\bcin\\s*>>[^;]*?\\b${varName}\\b`);
+          if (cinRegex.test(trimmed)) return true;
+          const assignRegex = new RegExp(`\\b${varName}\\s*(?:\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|<<=|>>=|=)[^=]`);
+          if (assignRegex.test(trimmed)) return true;
+          const incRegex = new RegExp(`(?:\\+\\+|--)\\s*\\b${varName}\\b|\\b${varName}\\b\\s*(?:\\+\\+|--)`);
+          if (incRegex.test(trimmed)) return true;
+          return false;
+        };
+
+        // 隨機產生逼真的 C++ 未初始化區域變數記憶體垃圾值 (Undefined Behavior)
+        const generateCppGarbageValue = (typeStr) => {
+          const t = (typeStr || '').toLowerCase();
+          // 典型常見的記憶體殘留垃圾值樣本庫 (含極小機率為 0，亦含典型隨機殘留值)
+          const commonGarbages = [
+            32767, -858993460, 21845, -1073741824, 14328, -2, 42718, 0, 1992, -32768, 65535, 127
+          ];
+          if (['float', 'double'].some(x => t.includes(x))) {
+            const fGarbages = [0.0, -1.07374e+08, 3.14159e-38, 2.71828e-20, 1.4013e-45];
+            return fGarbages[Math.floor(Math.random() * fGarbages.length)];
+          }
+          if (t.includes('bool')) {
+            return Math.random() < 0.5;
+          }
+          return commonGarbages[Math.floor(Math.random() * commonGarbages.length)];
+        };
+
         // 分析並分類變數型別 (純量 / 1D / 2D)
         const categorizeVariable = (name, val, rawType) => {
           let category = 'scalar';
@@ -3340,6 +3496,10 @@ print("Result:", calculate_sum(10))`
               category = '1d-array';
               typeStr = `陣列[${val.length}]`;
             }
+          } else if (val !== null && typeof val === 'object' && val.__isUninitialized) {
+            category = 'scalar';
+            displayVal = val.val;
+            typeStr = val.type || (typeof val.val === 'number' ? (Number.isInteger(val.val) ? 'int' : 'float') : 'int');
           } else if (val !== null && typeof val === 'object') {
             category = 'object';
             typeStr = '物件/Dict';
@@ -3357,12 +3517,17 @@ print("Result:", calculate_sum(10))`
             }
           }
 
+          const isUninit = (val && typeof val === 'object' && val.__isUninitialized) === true;
+
+          const isCustom = isUninit && (val && val.isCustom === true);
           return {
             name: name,
             value: displayVal,
             type: typeStr,
             category: category,
-            changed: false
+            changed: false,
+            isUninitialized: isUninit,
+            isCustomUninit: isCustom
           };
         };
 
@@ -3551,6 +3716,13 @@ print("Result:", calculate_sum(10))`
                 }
               }
 
+              // 注入使用者自訂的未初始化變數模擬初值 (題庫模式：同列追加分號語句，絕不增加行數，行號精確對齊)
+              for (const varName in customUninitOverrides.value) {
+                const customVal = customUninitOverrides.value[varName];
+                const pattern = new RegExp(`(^[ \\t]*(?:int|long|short|float|double|bool|char)\\b[^;\\n]*?\\b${varName}\\b[^;\\n]*;)`, 'm');
+                processedCode = processedCode.replace(pattern, `$1 ${varName} = ${customVal};`);
+              }
+
               const config = {
                 stdio: {
                   write: (s) => { stdoutBuffer += s; }
@@ -3571,6 +3743,8 @@ print("Result:", calculate_sum(10))`
               let cppStdinLinesRead = 0;
               const cppInputLinesCount = (inputData || '').trim() ? inputData.split(/\r?\n/).length : 0;
               const cppCodeLines = processedCode.split('\n');
+              const uninitGarbageMap = {}; // 追蹤本次除錯各未初始化變數之隨機記憶體殘留值
+              const hasAssignedInCode = {}; // 追蹤各變數是否已於程式碼執行中被明確賦值
 
               while (myDebugger && stepCount < maxSteps) {
                 // 1. 取得當前執行的行號
@@ -3605,38 +3779,51 @@ print("Result:", calculate_sum(10))`
                     rawVars.forEach(vObj => {
                       if (!vObj || !vObj.name) return;
                       // 排除 std 內部物件
-                      if (['cin', 'cout', 'endl', 'cerr', 'clog'].includes(vObj.name)) return;
+                      if (['cin', 'cout', 'endl', 'cerr', 'clog', 'main'].includes(vObj.name)) return;
                       
                       let rawV = (vObj.value !== undefined) ? vObj.value : vObj.val;
                       const cType = (vObj.type || '').toLowerCase();
                       
-                      // 處理未初始化值 (NaN / undefined)
-                      const isUninitialized = rawV === 'NaN' || rawV === undefined || (typeof rawV === 'number' && isNaN(rawV));
+                      // 檢查該變數先前是否已於執行過程中被程式碼主動賦值 (cin、=、++ 等)
+                      let isAssigned = hasAssignedInCode[vObj.name] || false;
+                      if (!isAssigned && lastLine !== null) {
+                        const prevCode = cppCodeLines[lastLine - 1] || '';
+                        if (isExplicitlyAssigned(prevCode, vObj.name)) {
+                          hasAssignedInCode[vObj.name] = true;
+                          isAssigned = true;
+                        }
+                      }
 
-                      // 若 C++ 宣告為整數型別 (int/long/short)
-                      if (['int', 'long', 'short', 'int32', 'int64'].some(t => cType.includes(t))) {
-                        if (isUninitialized) {
-                          rawV = 0; // 未初始化整數預設安全初值 0
+                      const hasOverride = customUninitOverrides.value[vObj.name] !== undefined;
+                      const isUninit = !isAssigned && (hasOverride || rawV === 'NaN' || rawV === undefined || (typeof rawV === 'number' && isNaN(rawV)));
+
+                      if (isUninit) {
+                        if (hasOverride) {
+                          rawV = { __isUninitialized: true, val: customUninitOverrides.value[vObj.name], type: vObj.type || cType || 'int', isCustom: true };
                         } else {
+                          if (!uninitGarbageMap[vObj.name]) {
+                            uninitGarbageMap[vObj.name] = generateCppGarbageValue(cType);
+                          }
+                          rawV = { __isUninitialized: true, val: uninitGarbageMap[vObj.name], type: vObj.type || cType || 'int', isCustom: false };
+                        }
+                      } else {
+                        delete uninitGarbageMap[vObj.name];
+                        if (['int', 'long', 'short', 'int32', 'int64'].some(t => cType.includes(t))) {
                           const parsedNum = parseInt(rawV, 10);
                           rawV = !isNaN(parsedNum) ? parsedNum : 0;
-                        }
-                      } else if (['float', 'double'].some(t => cType.includes(t))) {
-                        if (isUninitialized) {
-                          rawV = 0.0;
-                        } else {
+                        } else if (['float', 'double'].some(t => cType.includes(t))) {
                           const parsedNum = parseFloat(rawV);
                           rawV = !isNaN(parsedNum) ? parsedNum : 0.0;
+                        } else if (cType.includes('bool')) {
+                          rawV = rawV === true || rawV === 1 || rawV === '1' || rawV === 'true';
                         }
-                      } else if (cType.includes('bool')) {
-                        rawV = rawV === true || rawV === 1 || rawV === '1' || rawV === 'true';
                       }
 
                       parsedVars[vObj.name] = rawV;
                     });
                   } else if (typeof rawVars === 'object') {
                     for (let key in rawVars) {
-                      if (key && !key.startsWith('__') && !['cin', 'cout', 'endl', 'cerr', 'clog'].includes(key)) {
+                      if (key && !key.startsWith('__') && !['cin', 'cout', 'endl', 'cerr', 'clog', 'main'].includes(key)) {
                         const vObj = rawVars[key];
                         let rawV = (vObj && typeof vObj === 'object') 
                           ? ((vObj.value !== undefined) ? vObj.value : (vObj.val !== undefined ? vObj.val : vObj))
@@ -3849,6 +4036,50 @@ def __run_with_trace(user_code_str, stdin_str):
             return false;
           } finally {
             execEngineLoading.value = false;
+          }
+        };
+
+        // 儲存使用者自訂的未初始化變數模擬初值，重新預錄並精準停留在當前步驟
+        const saveCustomUninitVal = async (varName) => {
+          const rawInput = editingUninitVal.value;
+          const inputStr = (rawInput !== null && rawInput !== undefined) ? String(rawInput).trim() : '';
+          if (!inputStr) {
+            delete customUninitOverrides.value[varName];
+          } else {
+            const parsed = parseFloat(inputStr);
+            if (isNaN(parsed)) {
+              showToast("請輸入有效的數字初值！", "error");
+              return;
+            }
+            const finalVal = Number.isInteger(parsed) ? parseInt(parsed, 10) : parsed;
+            customUninitOverrides.value[varName] = finalVal;
+          }
+          editingUninitVar.value = null;
+
+          const currentLine = currentExecutingLine.value;
+          const currentIdx = currentStepIndex.value;
+
+          const ok = await prepareExecutionTrace();
+          if (ok && recordedSteps.value.length > 0) {
+            let targetIndex = 0;
+            let found = false;
+            for (let i = 0; i < recordedSteps.value.length; i++) {
+              if (recordedSteps.value[i].line === currentLine) {
+                targetIndex = i;
+                found = true;
+                break;
+              }
+            }
+            if (!found) {
+              targetIndex = Math.min(Math.max(0, currentIdx), recordedSteps.value.length - 1);
+            }
+            applyStep(targetIndex);
+            const displayVal = customUninitOverrides.value[varName];
+            if (displayVal !== undefined) {
+              showToast(`已將 ${varName} 的記憶體模擬初值設定為 ${displayVal}，停留在當前行！`, "success");
+            } else {
+              showToast(`已重設 ${varName} 的初值為隨機殘留值！`, "success");
+            }
           }
         };
 
@@ -4217,6 +4448,28 @@ int main() {
         const sandboxCode = ref(sandboxCodePy.value);
         const sandboxStdin = ref(savedStdin || '');
 
+        // 未初始化變數之使用者自訂模擬初值覆寫 (沙盒除錯模式)
+        const sandboxCustomUninitOverrides = ref({});
+        const sandboxEditingUninitVar = ref(null);
+        const sandboxEditingUninitVal = ref('');
+        const sandboxEditUninitInputRef = ref(null);
+
+        const startSandboxEditUninitVal = (name, val) => {
+          sandboxEditingUninitVar.value = name;
+          sandboxEditingUninitVal.value = (val !== undefined && val !== null) ? val : 0;
+          nextTick(() => {
+            if (sandboxEditUninitInputRef.value) {
+              sandboxEditUninitInputRef.value.focus();
+              sandboxEditUninitInputRef.value.select();
+            }
+          });
+        };
+
+        const cancelSandboxEditUninitVal = () => {
+          sandboxEditingUninitVar.value = null;
+          sandboxEditingUninitVal.value = '';
+        };
+
         // 除錯模式相關狀態
         const sandboxRecordedSteps = ref([]);
         const sandboxCurrentStepIndex = ref(-1);
@@ -4574,6 +4827,13 @@ int main() {
                 }
               }
 
+              // 注入使用者自訂的未初始化變數模擬初值 (沙盒模式：同列追加分號語句，絕不增加行數，行號精確對齊)
+              for (const varName in sandboxCustomUninitOverrides.value) {
+                const customVal = sandboxCustomUninitOverrides.value[varName];
+                const pattern = new RegExp(`(^[ \\t]*(?:int|long|short|float|double|bool|char)\\b[^;\\n]*?\\b${varName}\\b[^;\\n]*;)`, 'm');
+                processedCode = processedCode.replace(pattern, `$1 ${varName} = ${customVal};`);
+              }
+
               const config = {
                 stdio: {
                   write: (s) => { stdoutBuf += s; }
@@ -4647,6 +4907,14 @@ __sb_result = __sb_stdout.getvalue()
                 }
               }
 
+              // 注入使用者自訂的未初始化變數模擬初值 (沙盒逐行除錯模式：同列追加分號語句，絕不增加行數，行號精確對齊)
+              for (const varName in sandboxCustomUninitOverrides.value) {
+                const customVal = sandboxCustomUninitOverrides.value[varName];
+                const pattern = new RegExp(`(^[ \\t]*(?:int|long|short|float|double|bool|char)\\b[^;\\n]*?\\b${varName}\\b[^;\\n]*;)`, 'm');
+                processedCode = processedCode.replace(pattern, `$1 ${varName} = ${customVal};`);
+              }
+
+
               const config = {
                 stdio: {
                   write: (s) => { stdoutBuffer += s; }
@@ -4667,6 +4935,8 @@ __sb_result = __sb_stdout.getvalue()
               let cppStdinLinesRead = 0;
               const cppInputLinesCount = inputData.trim() ? inputData.split(/\r?\n/).length : 0;
               const cppCodeLines = processedCode.split('\n');
+              const sandboxUninitGarbageMap = {}; // 追蹤本次除錯各未初始化變數之隨機記憶體殘留值
+              const sandboxHasAssignedInCode = {}; // 追蹤各變數是否已於程式碼執行中被明確賦值
 
               while (myDebugger && stepCount < maxSteps) {
                 let currentLine = null;
@@ -4695,22 +4965,45 @@ __sb_result = __sb_stdout.getvalue()
                   if (Array.isArray(rawVars)) {
                     rawVars.forEach(vObj => {
                       if (!vObj || !vObj.name) return;
-                      if (['cin', 'cout', 'endl', 'cerr', 'clog'].includes(vObj.name)) return;
+                      if (['cin', 'cout', 'endl', 'cerr', 'clog', 'main'].includes(vObj.name)) return;
                       let rawV = (vObj.value !== undefined) ? vObj.value : vObj.val;
                       const cType = (vObj.type || '').toLowerCase();
-                      const isUninitialized = rawV === 'NaN' || rawV === undefined || (typeof rawV === 'number' && isNaN(rawV));
-                      if (['int', 'long', 'short', 'int32', 'int64'].some(t => cType.includes(t))) {
-                        rawV = isUninitialized ? 0 : (parseInt(rawV, 10) || 0);
-                      } else if (['float', 'double'].some(t => cType.includes(t))) {
-                        rawV = isUninitialized ? 0.0 : (parseFloat(rawV) || 0.0);
-                      } else if (cType.includes('bool')) {
-                        rawV = rawV === true || rawV === 1 || rawV === '1' || rawV === 'true';
+                      let isAssigned = sandboxHasAssignedInCode[vObj.name] || false;
+                      if (!isAssigned && lastLine !== null) {
+                        const prevCode = cppCodeLines[lastLine - 1] || '';
+                        if (isExplicitlyAssigned(prevCode, vObj.name)) {
+                          sandboxHasAssignedInCode[vObj.name] = true;
+                          isAssigned = true;
+                        }
+                      }
+
+                      const hasOverride = sandboxCustomUninitOverrides.value[vObj.name] !== undefined;
+                      const isUninit = !isAssigned && (hasOverride || rawV === 'NaN' || rawV === undefined || (typeof rawV === 'number' && isNaN(rawV)));
+
+                      if (isUninit) {
+                        if (hasOverride) {
+                          rawV = { __isUninitialized: true, val: sandboxCustomUninitOverrides.value[vObj.name], type: vObj.type || cType || 'int', isCustom: true };
+                        } else {
+                          if (!sandboxUninitGarbageMap[vObj.name]) {
+                            sandboxUninitGarbageMap[vObj.name] = generateCppGarbageValue(cType);
+                          }
+                          rawV = { __isUninitialized: true, val: sandboxUninitGarbageMap[vObj.name], type: vObj.type || cType || 'int', isCustom: false };
+                        }
+                      } else {
+                        delete sandboxUninitGarbageMap[vObj.name];
+                        if (['int', 'long', 'short', 'int32', 'int64'].some(t => cType.includes(t))) {
+                          rawV = (parseInt(rawV, 10) || 0);
+                        } else if (['float', 'double'].some(t => cType.includes(t))) {
+                          rawV = (parseFloat(rawV) || 0.0);
+                        } else if (cType.includes('bool')) {
+                          rawV = rawV === true || rawV === 1 || rawV === '1' || rawV === 'true';
+                        }
                       }
                       parsedVars[vObj.name] = rawV;
                     });
                   } else if (typeof rawVars === 'object') {
                     for (let key in rawVars) {
-                      if (key && !key.startsWith('__') && !['cin', 'cout', 'endl', 'cerr', 'clog'].includes(key)) {
+                      if (key && !key.startsWith('__') && !['cin', 'cout', 'endl', 'cerr', 'clog', 'main'].includes(key)) {
                         const vObj = rawVars[key];
                         let rawV = (vObj && typeof vObj === 'object') 
                           ? ((vObj.value !== undefined) ? vObj.value : (vObj.val !== undefined ? vObj.val : vObj))
@@ -4915,6 +5208,50 @@ def __run_with_trace(user_code_str, stdin_str):
           applySandboxStep(0);
         };
 
+        // 沙盒模式：儲存使用者自訂的未初始化變數模擬初值，重新預錄並精準停留在當前步驟
+        const saveSandboxCustomUninitVal = async (varName) => {
+          const rawInput = sandboxEditingUninitVal.value;
+          const inputStr = (rawInput !== null && rawInput !== undefined) ? String(rawInput).trim() : '';
+          if (!inputStr) {
+            delete sandboxCustomUninitOverrides.value[varName];
+          } else {
+            const parsed = parseFloat(inputStr);
+            if (isNaN(parsed)) {
+              showToast("請輸入有效的數字初值！", "error");
+              return;
+            }
+            const finalVal = Number.isInteger(parsed) ? parseInt(parsed, 10) : parsed;
+            sandboxCustomUninitOverrides.value[varName] = finalVal;
+          }
+          sandboxEditingUninitVar.value = null;
+
+          const currentLine = sandboxCurrentExecutingLine.value;
+          const currentIdx = sandboxCurrentStepIndex.value;
+
+          const ok = await prepareSandboxDebugTrace();
+          if (ok && sandboxRecordedSteps.value.length > 0) {
+            let targetIndex = 0;
+            let found = false;
+            for (let i = 0; i < sandboxRecordedSteps.value.length; i++) {
+              if (sandboxRecordedSteps.value[i].line === currentLine) {
+                targetIndex = i;
+                found = true;
+                break;
+              }
+            }
+            if (!found) {
+              targetIndex = Math.min(Math.max(0, currentIdx), sandboxRecordedSteps.value.length - 1);
+            }
+            applySandboxStep(targetIndex);
+            const displayVal = sandboxCustomUninitOverrides.value[varName];
+            if (displayVal !== undefined) {
+              showToast(`已將 ${varName} 的記憶體模擬初值設定為 ${displayVal}，停留在當前行！`, "success");
+            } else {
+              showToast(`已重設 ${varName} 的初值為隨機殘留值！`, "success");
+            }
+          }
+        };
+
         // 渲染指定步驟 (包含行高亮、變數 diff 橘色高亮與輸出同步)
         const applySandboxStep = (index, scrollToTop = false) => {
           if (index < 0 || index >= sandboxRecordedSteps.value.length) return;
@@ -5022,6 +5359,8 @@ def __run_with_trace(user_code_str, stdin_str):
           sandboxStdout.value = '';
           sandboxExecFinished.value = false;
           sandboxShowRawStdin.value = false;
+          sandboxCustomUninitOverrides.value = {};
+          cancelSandboxEditUninitVal();
           if (sandboxStdinScrollRef.value) {
             sandboxStdinScrollRef.value.scrollTop = 0;
           }
@@ -5839,7 +6178,16 @@ def __run_with_trace(user_code_str, stdin_str):
           init();
           window.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
-              // 0. 若正處於題號修改狀態，優先取消編輯題號
+              // 0. 若正處於未初始化變數初值修改狀態，優先取消
+              if (editingUninitVar.value) {
+                cancelEditUninitVal();
+                return;
+              }
+              if (sandboxEditingUninitVar.value) {
+                cancelSandboxEditUninitVal();
+                return;
+              }
+              // 0.1 若正處於題號修改狀態，優先取消編輯題號
               if (editingProblemKey.value) {
                 cancelEditProblemNo();
                 return;
@@ -5946,6 +6294,20 @@ def __run_with_trace(user_code_str, stdin_str):
           editingProblemKey,
           editingProblemInputVal,
           editProblemInputRef,
+          customUninitOverrides,
+          editingUninitVar,
+          editingUninitVal,
+          editUninitInputRef,
+          startEditUninitVal,
+          cancelEditUninitVal,
+          saveCustomUninitVal,
+          sandboxCustomUninitOverrides,
+          sandboxEditingUninitVar,
+          sandboxEditingUninitVal,
+          sandboxEditUninitInputRef,
+          startSandboxEditUninitVal,
+          cancelSandboxEditUninitVal,
+          saveSandboxCustomUninitVal,
           startEditProblemNo,
           cancelEditProblemNo,
           saveEditedProblemNo,
