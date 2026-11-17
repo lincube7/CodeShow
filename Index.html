@@ -3457,8 +3457,8 @@ print("Result:", calculate_sum(10))`
           });
         };
 
-        // C++ 演算法常用函式同行零偏移補丁 (維持 100% 行號精確對齊，提供 min, max, swap 跨型別支援)
-        const CPP_ALGORITHM_POLYFILL = 'int min(int a,int b){return a<b?a:b;} int max(int a,int b){return a>b?a:b;} double min(double a,double b){return a<b?a:b;} double max(double a,double b){return a>b?a:b;} void swap(int &a,int &b){int t=a;a=b;b=t;} void swap(double &a,double &b){double t=a;a=b;b=t;}';
+        // C++ 演算法常用函式同行零偏移補丁 (維持 100% 行號精確對齊，提供 min, max 跨型別支援)
+        const CPP_ALGORITHM_POLYFILL = 'int min(int a,int b){return a<b?a:b;} int max(int a,int b){return a>b?a:b;} double min(double a,double b){return a<b?a:b;} double max(double a,double b){return a>b?a:b;}';
 
         // 統一 C++ 程式碼預處理：注入常用演算法標頭檔補丁、自動補齊 return 0、以及自訂記憶體初值注入
         const preprocessCppCode = (rawCode, customOverrides = {}) => {
@@ -3468,8 +3468,8 @@ print("Result:", calculate_sum(10))`
           const algoIncludePattern = /^[ \t]*#include\s*[<"](?:algorithm|bits\/stdc\+\+\.h)[>"][ \t]*/m;
           if (algoIncludePattern.test(processed)) {
             processed = processed.replace(algoIncludePattern, CPP_ALGORITHM_POLYFILL);
-          } else if (/\b(?:min|max|swap)\s*\(/.test(processed)) {
-            // 若學生未寫 #include <algorithm> 但呼叫了 min / max / swap，自動於 using namespace std; 後方同行追加
+          } else if (/\b(?:min|max)\s*\(/.test(processed)) {
+            // 若學生未寫 #include <algorithm> 但呼叫了 min / max，自動於 using namespace std; 後方同行追加
             if (/^[ \t]*using\s+namespace\s+std\s*;[ \t]*/m.test(processed)) {
               processed = processed.replace(/(^[ \t]*using\s+namespace\s+std\s*;[ \t]*)/m, `$1 ${CPP_ALGORITHM_POLYFILL} `);
             }
@@ -4491,7 +4491,7 @@ int main() {
 `;
 
         // C++ 標頭檔支援提示訊息 (透過 Vue 資料渲染，避免在 HTML 模板中出現角括號導致解析中斷)
-        const sandboxCppNotice = '⚠️ 支援標頭檔：<iostream>、<algorithm> (min, max, swap)、<cmath>、<cstring>、<cstdlib>（不支援 <vector>、<string> 等 STL 容器，請改用原生陣列）';
+        const sandboxCppNotice = '⚠️ 支援標頭檔：<iostream>、<algorithm> (min, max)、<cmath>、<cstring>、<cstdlib>（不支援 <vector>、<string> 等 STL 容器，請改用原生陣列）';
 
         // 雙語言獨立草稿快取 (localStorage)
         let savedPy = '';

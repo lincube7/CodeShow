@@ -121,7 +121,7 @@ flowchart TD
 為了讓學生擺脫死背程式碼、深入理解演算法內部記憶體狀態與迴圈運作流程，系統具備純前端瀏覽器本地沙盒執行引擎：
 * **Python 與 C++ 雙語言自適應切換**：
   * **Python**：按需懶載入輕量 WebAssembly 直譯器 **Pyodide**，透過 `sys.settrace` 即時攔截行號與局部變數。
-  * **C++**：按需懶載入純前端 C++ 直譯器 **JSCPP**，藉由 AST 樹 `nextNode().sLine` 精準獲取執行游標，並內建 `int main()` 遺漏 `return 0;` 與未初始化 `NaN` 的安全容錯修正；**內建 `<algorithm>` / `<bits/stdc++.h>` 零行號偏移同列相容補丁**，原生支援極為常用的 `min`、`max`、`swap`（支援 `int`、`double`、`float`、`char`），徹底解決輕量直譯器報出 `cannot find library:algorithm` 的相容性障礙。
+  * **C++**：按需懶載入純前端 C++ 直譯器 **JSCPP**，藉由 AST 樹 `nextNode().sLine` 精準獲取執行游標，並內建 `int main()` 遺漏 `return 0;` 與未初始化 `NaN` 的安全容錯修正；**內建 `<algorithm>` / `<bits/stdc++.h>` 零行號偏移同列相容補丁**，原生支援極為常用的 `min`、`max`（支援 `int`、`double`、`float`、`char`），徹底解決輕量直譯器報出 `cannot find library:algorithm` 的相容性障礙。
   * **完全零伺服器開銷**：全於訪客瀏覽器本地記憶體運算，不耗損 Google Apps Script 執行時間額度。
 * **左欄嚴格防複製代碼行高亮與長行自動折行 (Word Wrap)**：
   * 當前執行行以 **藍紫色高亮與指針 ▶** 標示並自動捲動置中；已執行過的行維持高亮，未執行行淡化。
