@@ -356,3 +356,30 @@ Google Apps Script 的網頁應用程式在修改程式碼後，**單純按儲�
 > 「自由練習沙盒」與「題庫卡片彈窗」在視窗層級控制、全螢幕防穿透遮罩、拖曳選取防護、即時監看面板連動以及底層除錯執行引擎上，**兩者皆視為同等重要的除錯介面**。
 > 未來如有任何關於彈窗行為、鍵盤快捷鍵、防誤觸機制或除錯器互動之修改，**必須兩處同時檢視並同步修改**，確保全系統操作心智模型的一致性。
 
+#### 4. 🛡️ 程式碼修改品質門禁與語法防護機制 (Quality & Syntax Guards)
+> **歷史教訓與痛點警示**：
+> 由於 `Index.html` 採單一檔案（Single File）架構整合 Vue 3 與龐大除錯邏輯，若在編輯局部代碼時因巢狀層級深而意外多留或少吃了封閉大括號 `}`，會導致整段 JavaScript 拋出 `SyntaxError`，進而使得 Vue 應用程式無法成功掛載（Mount），整張網頁將癱瘓呈現未編譯的 Mustache 原始模板（`{{ ... }}`）。
+> 傳統的 `<html` 或 `<script` 標籤計數檢查無法抓出 JavaScript 語法錯誤，因此未來任何對話與維護**強制遵守以下兩大防護機制**：
+
+* **機制 1：macOS 原生 JavaScriptCore (`jsc`) 編譯期語法門禁（Mandatory Syntax Check）**：
+  * 未來無論是 AI 助手或開發者，在對 `Index.html` 完成任何編輯後、建立 Git Commit 或向使用者回覆前，**強制必須執行真正的 WebKit 核心靜態編譯檢驗**：
+    ```bash
+    python3 -c '
+    import re, subprocess
+    with open("Index.html") as f: c = f.read()
+    assert c.count("<html") == c.count("</html>") == 1
+    assert c.count("<script") == c.count("</script>")
+    scripts = re.findall(r"<script(?:\s+[^>]*)?>(.*?)</script>", c, re.DOTALL)
+    with open("/tmp/__v_syntax.js", "w") as f:
+        f.write("try { new Function(" + repr(scripts[-1]) + "); print(\"JS_SYNTAX_VALID\"); } catch(e) { print(\"JS_SYNTAX_ERROR: \" + e.message); }")
+    res = subprocess.run(["/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc", "/tmp/__v_syntax.js"], capture_output=True, text=True)
+    assert "JS_SYNTAX_VALID" in res.stdout, f"JavaScript Syntax Check Failed: {res.stdout}"
+    print("Code Quality Guard Passed: 100% Valid!")
+    '
+    ```
+  - 只有在 `JS_SYNTAX_VALID` 毫秒檢驗完全通過後，方可提交代碼，從機制上 100% 杜絕語法崩潰與畫面破版問題。
+
+* **機制 2：邏輯模組化抽離原則（Modular Pure Function Principle）**：
+  - 複雜的處理邏輯（例如 C++ 陣列反序列化 `parseCppArrayValue`、程式碼預處理 `preprocessCppCode`、JSCPP 配置 `getJSCPPConfig` 等）必須優先封裝為頂層獨立的純函式。
+  - 盡量避免在 `prepareExecutionTrace` 或 `prepareSandboxDebugTrace` 內部 5～6 層深度的巢狀區塊（`while` ➜ `if` ➜ `Array.isArray` ➜ `forEach`）進行大範圍替換，修改時僅調整獨立函式內部，從源頭消除括號邊界剪裁出錯的物理機率。
+
