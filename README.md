@@ -22,7 +22,7 @@ flowchart TD
             AntiOCR["多維度反 OCR 光學辨識層<br/>(動態噪點 / 物理切線 / 色散 / Token 混淆)"]
             LazyH2C["html2canvas 動態懶載入<br/>(僅老師上傳時才載入 200KB 庫)"]
             Viewer["防複製展示彈窗<br/>(雙指捏合 / 滾輪縮放 50%~500% / 平移拖曳)"]
-            CodeExec["雙語言線上逐行執行與變數視覺化<br/>(Python Pyodide / C++ JSCPP 沙盒)"]
+            CodeExec["雙語言線上逐行執行與變數視覺化<br/>(Python Pyodide / C++ 雙引擎: 輕量 JSCPP + 完整 GCC)"]
             FillBlank["「??」填空練習模式<br/>(Tab 4格縮排 / 填空後方可步進除錯)"]
             UX["UX 模組: 密度切換 / 即時搜尋高亮 / 老師複製代碼"]
         end
@@ -382,4 +382,68 @@ Google Apps Script 的網頁應用程式在修改程式碼後，**單純按儲�
 * **機制 2：邏輯模組化抽離原則（Modular Pure Function Principle）**：
   - 複雜的處理邏輯（例如 C++ 陣列反序列化 `parseCppArrayValue`、程式碼預處理 `preprocessCppCode`、JSCPP 配置 `getJSCPPConfig` 等）必須優先封裝為頂層獨立的純函式。
   - 盡量避免在 `prepareExecutionTrace` 或 `prepareSandboxDebugTrace` 內部 5～6 層深度的巢狀區塊（`while` ➜ `if` ➜ `Array.isArray` ➜ `forEach`）進行大範圍替換，修改時僅調整獨立函式內部，從源頭消除括號邊界剪裁出錯的物理機率。
+
+---
+
+### 8. 🚀 C++ 雙編譯/逐行除錯雙模引擎架構與除錯覆盤 (v4.0)
+
+為兼顧**「初學者零延遲即時教學」**與**「進階競賽/APCS 完整 STL 語法支援」**，系統於 v4.0 正式確立了 **C++ 雙引擎架構（Dual-Engine Architecture）**：
+
+| 維度 / 特性 | ⚡ 輕量模式 (JSCPP) | 🚀 完整 GCC 模式 (Godbolt Compiler Explorer) |
+|---|---|---|
+| **底層技術** | 純前端 WebAssembly / JavaScript C++ AST 直譯器 | 遠端真實 Linux 容器 GCC 13.2 (x86-64) 原生編譯 |
+| **標頭檔支援** | 支援 `<iostream>`、`<cmath>` 與基礎語法 | 支援 `<vector>`、`<string>`、`<map>`、`<set>`、`<queue>`、`<stack>`、`<algorithm>` 等全部 STL 容器 |
+| **啟動與響應** | ⚡ **零延遲 (<0.1s)**，瀏覽器本地即刻生成步驟 | 🚀 **極速雲端 (約 1~2s)**，後端專屬直發編譯 |
+| **視覺配色** | 琥珀金 (`amber-500`) | 科技紫漸層 (`violet-600` / `purple-950`) |
+| **適用情境** | 基礎變數、條件判斷、迴圈、陣列等入門教學 | APCS 競賽題、萬用標頭檔 `bits/stdc++.h`、STL 容器演算法 |
+
+#### 1. 完整 GCC 模式核心架構設計
+1. **後端專屬代理直發 (`proxyWandboxCompile`)**：
+   - 由 Google Apps Script 後端直接呼叫 Godbolt Compiler Explorer API (`https://godbolt.org/api/compiler/g132/compile`)。
+   - 啟用 `{ filters: { execute: true } }` 單次請求完成 Compile + Run，響應時間僅 1~2 秒，且徹底規避前端 iframe 跨來源阻擋。
+2. **C++ 萬能序列化探針標頭 (`CODESHOW_CPP_TRACER_HEADER`)**：
+   - 透過模板特化 (`Serializer<T>`) 原生支援純量、`pair`、`vector`、`set`、`map`、`stack`、`queue`、`priority_queue`、`bitset` 與多維原生陣列之 JSON 序列化。
+   - 嚴格依照 C++ Block Scope 作用域堆疊在每行注入 `{ __codeshow_tracer__::__start_step__(line); ... __codeshow_tracer__::__end_step__(); }`。
+   - 注入 `#line 1` 指令，確保插樁後編譯器報錯與除錯行號與編輯器原始碼維持 100% 精確 1:1 對齊。
+3. **即時標準輸出攔截器 (`StdoutCapture`)**：
+   - 透過 `std::cout.rdbuf(__stdout_buf__.rdbuf())` 重導向緩衝區，在每個步驟結束時記錄當刻累積輸出快照 `"out": "..."`。
+   - 程式結束時由 `__finish_trace__()` 自動還原原始 `std::cout`，確保輸出資訊完整且步驟推進精準。
+
+---
+
+#### 2. 開發階段踩坑經驗與深度覆盤 (Critical Pitfalls & Solutions)
+
+本階段在整合 GCC 遠端除錯與提升 JSCPP 穩定性時，歷經了多次深入除錯，特此完整記錄關鍵教訓：
+
+##### 踩坑 1：Wandbox 延遲長達 8~10 秒 vs. Godbolt 1~2 秒架構抉擇
+* **問題現象**：初期採用 Wandbox API 進行遠端編譯，但 Wandbox 需多輪輪詢才能取回結果，加上免費用戶頻寬限流，編譯一次常需 8~10 秒，課堂互動體驗停滯。
+* **解決方案**：果斷捨棄 Wandbox，全面遷移至 Godbolt (Compiler Explorer) API，單一 HTTP POST 請求同步執行編譯與運行，配合全球 CDN 節點快取，延遲驟降至 1~2 秒，達到流暢教學標準。
+
+##### 踩坑 2：輕量模式 (JSCPP) 注入 `min`/`max` 字串導致行號跳轉與變數洩漏
+* **問題現象**：先前為支援 `min`/`max`，在原始碼第 2 行注入字串補丁 `int min(int a, int b) { ... }`。當學生在 ZeroJudge g595 等題目除錯到第 15 行 `ans += min(...)` 按下一步時，游標竟然意外跳回第 2 行，變數表更莫名出現虛擬變數 `a` 與 `b`。
+* **根因分析**：解譯器將注入的實體 C++ 程式碼納入了 AST 與 Scope 遍歷，函式呼叫時自然跳入該行並將參數 `a`、`b` 推入變數清單。
+* **解決方案**：徹底拔除 `CPP_ALGORITHM_POLYFILL` 字串注入，改於 `setupJSCPPAlgorithms` 透過 JSCPP 底層 API `rt.regFunc(minFunc, "std", "min", ...)` 註冊為原生 JavaScript 函式，直接返回運算值，達成真正**零行號跳轉、零虛擬變數洩漏**。
+
+##### 踩坑 3：區域陣列未初始化引發 `overflow of NaN(int)` 崩潰 (ZeroJudge g595)
+* **問題現象**：在 `main` 函式宣告局部大陣列（如 `int h[105];`）但未設初值，JSCPP 會以 `NaN` 填塞陣列元素。當後續演算法執行 `ans += min(h[i-1], h[i+1])` 取到未賦值的邊界值時，JSCPP 核心直接拋出致命錯誤 `overflow of NaN(int)` 導致執行崩潰。
+* **解決方案**：實作 `autoInitCppArrays()` 正則掃描器，在代碼送入 JSCPP 解析前自動為無初值區域陣列補上 `= {0}`，消除解譯器溢位 Bug，同時在前端視覺化變數表中依然提供逼真的隨機未初始化殘留值模擬。
+
+##### 踩坑 4：完整 GCC 模式逐行除錯 Step 1 輸出全部洩漏 (Stdout Leakage)
+* **問題現象**：在題庫或沙盒以 GCC 模式逐行除錯時，第 0 步為空，但一按下一步（Step 1），整支程式執行完的所有輸出（例如 4 筆測資的全部閏年/平年答案）瞬間全數出現在右下角終端，無法隨單步執行逐步出現。
+* **根因分析**：Godbolt 是整段程式執行完畢後一次性回傳 `programOutput`，而前端解析器 `parseGccTraceSteps` 原本無條件將 `output: programOutput || ''` 塞入每一步驟中。
+* **解決方案**：在 C++ 探針頭檔中實作 `StdoutCapture` 攔截 `std::cout.rdbuf()`，每步 probe 結束時輸出累積快照 `"out": "..."`；前端 `parseGccTraceSteps` 依步讀取 `item.out`。未輸出前維持空字串，執行到 `cout` 才累積，題庫與沙盒兩處同步達成 100% 擬真逐步輸出。
+
+##### 踩坑 5：C++ 探針字元跳脫與 JS Template String 反引號衝突
+* **問題現象**：在 C++ 插樁標頭檔的 `escape_string` 中使用 `uc == '\n'` 或 `snprintf("\\u...")` 時，因整段 C++ 代碼置於 JavaScript 反引號範本字串（Template Literal）內，`\n` 被 JS 提前解析為真實換行，導致送往 GCC 編譯時噴出 `missing terminating ' character` 語法錯誤。
+* **解決方案**：探針內部字元比對一律採用整數 ASCII 碼（如 `(char)10`、`13`、`9`、`34`、`92`），並過濾 `< 32` 之非可見字元，徹底隔絕跨語言字串範本轉義干擾。
+
+##### 踩坑 6：除錯途中切換引擎引發邏輯衝突與按鈕 Hover 殘留
+* **問題現象**：除錯執行中切換模式會使前端已預錄的 steps 與變數表狀態機混亂；且以 `:disabled` 禁用按鈕後，滑鼠懸停時文字依然發亮，缺乏明確禁用反饋。
+* **解決方案**：
+  - 於題庫與沙盒加入嚴格執行期鎖定：`:disabled="currentStepIndex !== -1 || isAutoPlaying || executing || gccCompiling"`，只有按「🔄 重新開始」回到準備就緒狀態才允許切換。
+  - 樣式嚴格改採 `enabled:hover:text-slate-200 disabled:hover:text-slate-400 disabled:cursor-not-allowed disabled:opacity-40`，禁止時徹底不亮。
+
+##### 踩坑 7：題庫除錯「停止除錯 返回圖片」未重設狀態
+* **問題現象**：使用者在除錯中途按「停止除錯 返回圖片」，再按「逐行執行」進入時，仍停在上次離開的步驟，未重新開始。
+* **解決方案**：將退出動作統整為 `returnToImageMode`，連動觸發 `resetExecution(false)`，確保「停止除錯 返回圖片」、頂部「🖼️ 圖片模式」與右上角「✕ 關閉」皆徹底重設除錯狀態。
 

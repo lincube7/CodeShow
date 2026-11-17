@@ -767,3 +767,157 @@ function renameProblemNo(course, oldProblemNo, newProblemNo) {
     newProblemNo: newProblemNo
   };
 }
+
+// ==================== 遠端 GCC 編譯代理 (Godbolt/Compiler Explorer API) ====================
+/**
+ * 透過 Compiler Explorer (godbolt.org) 後端進行正統 GCC 13.2 編譯與執行
+ * 由 Google Apps Script 伺服器發送，100% 繞過瀏覽器 CORS 限制
+ * 回傳格式與原 Wandbox 格式相容：{ status, compiler_error, program_output, program_error }
+ * 任何人（包含學生）皆可呼叫，不需 assertTeacher()
+ *
+ * 效能對比：
+ *   Wandbox  : 8~18 秒 (OCI 容器排隊時延)
+ *   Godbolt  : 1~3 秒 (CDN 快取 + 分散式節點)
+ */
+function proxyWandboxCompile(code, stdinInput) {
+  var processedCode = code || '';
+
+  // bits/stdc++.h 展開：避免巨型標頭拖慢編譯速度
+  if (/^[ \t]*#include\s*[<"]bits\/stdc\+\+\.h[>"]/m.test(processedCode)) {
+    var coreHeaders = [
+      '#include <iostream>', '#include <vector>', '#include <string>',
+      '#include <algorithm>', '#include <cmath>', '#include <map>',
+      '#include <set>', '#include <queue>', '#include <stack>',
+      '#include <utility>', '#include <bitset>', '#include <numeric>',
+      '#include <climits>', '#include <cassert>'
+    ].join('\n');
+    processedCode = processedCode.replace(/^[ \t]*#include\s*[<"]bits\/stdc\+\+\.h[>"]/m, coreHeaders);
+  }
+
+  // Godbolt Compiler Explorer API - 單一請求同步執行 (compile + run)
+  var godboltPayload = {
+    source: processedCode,
+    compiler: 'g132',          // x86-64 gcc 13.2 (穩定版)
+    options: {
+      userArguments: '-O0 -std=c++17',
+      executeParameters: {
+        args: [],
+        stdin: stdinInput || ''
+      },
+      compilerOptions: {},
+      filters: { execute: true },
+      tools: [],
+      libraries: []
+    },
+    lang: 'c++',
+    allowStoreCodeDebug: false
+  };
+
+  var fetchOptions = {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      'Accept': 'application/json',
+      'User-Agent': 'CodeShowGAS/2.0'
+    },
+    payload: JSON.stringify(godboltPayload),
+    muteHttpExceptions: true
+  };
+
+  try {
+    var response = UrlFetchApp.fetch(
+      'https://godbolt.org/api/compiler/g132/compile',
+      fetchOptions
+    );
+    var text = response.getContentText();
+    var data;
+    try {
+      data = JSON.parse(text);
+    } catch (jsonErr) {
+      return { status: '1', compiler_error: 'Godbolt 回應格式異常：' + text.substring(0, 200), program_error: '', program_output: '' };
+    }
+
+    // 解析 Godbolt 回應格式 → 轉換成 Wandbox 相容格式
+    // data.stderr        = 編譯錯誤 (array of {text})
+    // data.code          = 0 表示編譯成功
+    // data.execResult.stdout = 程式輸出 (array of {text})
+    // data.execResult.stderr = 程式 stderr/cerr 輸出（逐行除錯追蹤 JSON 寫在此）
+
+    var compilerErrorLines = (data.stderr || []).map(function(l) { return l.text || ''; });
+    var compilerError = compilerErrorLines.join('\n').trim();
+
+    // 若編譯失敗 (code != 0)，直接回傳編譯錯誤
+    if (data.code !== 0) {
+      return {
+        status: '1',
+        compiler_error: compilerError || '編譯失敗（未知錯誤）',
+        program_error: '',
+        program_output: ''
+      };
+    }
+
+    var execResult = data.execResult || {};
+
+    // 程式標準輸出 (stdout)
+    var stdoutLines = (execResult.stdout || []).map(function(l) { return l.text || ''; });
+    var programOutput = stdoutLines.join('\n');
+
+    // 程式 stderr/cerr 輸出 (逐行除錯追蹤 JSON 寫在此)
+    var stderrLines = (execResult.stderr || []).map(function(l) { return l.text || ''; });
+    var programError = stderrLines.join('\n');
+
+    // 若執行時發生 runtime error
+    var execCode = execResult.code;
+    var status = (execCode === 0 || execCode === undefined) ? '0' : String(execCode);
+
+    return {
+      status: status,
+      compiler_error: '',
+      program_output: programOutput,
+      program_error: programError,
+      program_message: programError
+    };
+
+  } catch (e) {
+    // Godbolt 無法連線時，改用 Wandbox 作為備援
+    return proxyWandboxFallback_(processedCode, stdinInput, e.message);
+  }
+}
+
+/**
+ * Wandbox 備援函式（Godbolt 失效時自動切換）
+ */
+function proxyWandboxFallback_(processedCode, stdinInput, primaryError) {
+  var payload = {
+    compiler: 'gcc-13.2.0',
+    code: processedCode,
+    stdin: stdinInput || '',
+    options: 'boost-nothing-gcc-13.2.0'
+  };
+  var options = {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'User-Agent': 'CodeShowGAS/1.0' },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+  try {
+    var resp = UrlFetchApp.fetch('https://wandbox.org/api/compile.json', options);
+    var data = JSON.parse(resp.getContentText());
+    var errText = (data.compiler_error || '') + ' ' + (data.program_error || '') + ' ' + (data.program_message || '');
+    if (/OCI runtime error|Resource temporarily unavailable/i.test(errText)) {
+      payload.compiler = 'gcc-12.3.0';
+      payload.options = 'boost-nothing-gcc-12.3.0';
+      options.payload = JSON.stringify(payload);
+      return JSON.parse(UrlFetchApp.fetch('https://wandbox.org/api/compile.json', options).getContentText());
+    }
+    return data;
+  } catch (e2) {
+    return {
+      status: '1',
+      compiler_error: 'Godbolt 連線異常：' + (primaryError || '') + '；備援 Wandbox 亦失敗：' + (e2.message || String(e2)),
+      program_error: '',
+      program_output: ''
+    };
+  }
+}

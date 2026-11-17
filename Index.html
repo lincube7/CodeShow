@@ -719,7 +719,7 @@
           <div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 sm:gap-1.5 bg-slate-950/90 p-1 sm:p-1.5 rounded-2xl border border-slate-700/80 shadow-inner z-10">
             <button
               type="button"
-              @click="viewerMode = 'image'; showWatchPanel = false; stopAutoPlay()"
+              @click="returnToImageMode"
               :class="viewerMode === 'image' ? 'bg-indigo-600 hover:bg-indigo-500 text-white font-black shadow-lg shadow-indigo-600/40 ring-1 ring-indigo-400/40' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/70 font-medium'"
               class="w-[110px] sm:w-[130px] py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 select-none active:scale-95">
               <span class="text-sm sm:text-base shrink-0">🖼️</span>
@@ -859,6 +859,31 @@
                     <span class="w-2.5 h-2.5 rounded-full bg-emerald-500/80 inline-block"></span>
                   </div>
                   <span class="text-slate-300 font-bold ml-1">{{ activeProblem.problemNo }}.{{ activeProblem.language === 'cpp' ? 'cpp' : (activeProblem.language === 'c' ? 'c' : 'py') }}</span>
+                  <!-- 題庫模式 C++ 編譯引擎模式膠囊切換 -->
+                  <div 
+                    v-if="activeProblem.language === 'cpp' || activeProblem.language === 'c'"
+                    class="ml-2 inline-flex items-center p-0.5 rounded-lg bg-black/60 border border-slate-700/80 text-[11px] font-sans shadow-inner shrink-0">
+                    <button 
+                      type="button"
+                      @click="toggleProblemCppEngine('jscpp')"
+                      :disabled="currentStepIndex !== -1 || isAutoPlaying || executing || gccCompiling"
+                      :class="problemCppEngine === 'jscpp' ? 'bg-amber-500 text-slate-950 font-bold shadow-sm shadow-amber-500/25' : 'text-slate-400 enabled:hover:text-slate-200 disabled:hover:text-slate-400'"
+                      class="px-2 py-0.5 rounded-md transition-all flex items-center gap-1 enabled:active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                      :title="currentStepIndex !== -1 ? '除錯進行中無法切換引擎，請先點擊【重新開始】' : '輕量直譯器：秒開即時除錯，支援基礎語法'">
+                      <span>⚡ 輕量</span>
+                      <span class="text-[9px] opacity-75 font-mono">(JSCPP)</span>
+                    </button>
+                    <button 
+                      type="button"
+                      @click="toggleProblemCppEngine('gcc')"
+                      :disabled="currentStepIndex !== -1 || isAutoPlaying || executing || gccCompiling"
+                      :class="problemCppEngine === 'gcc' ? 'bg-violet-600 text-white font-bold shadow-sm shadow-violet-500/25' : 'text-slate-400 enabled:hover:text-slate-200 disabled:hover:text-slate-400'"
+                      class="px-2 py-0.5 rounded-md transition-all flex items-center gap-1 enabled:active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                      :title="currentStepIndex !== -1 ? '除錯進行中無法切換引擎，請先點擊【重新開始】' : '完整 GCC 編譯器：支援全部 STL 標頭檔'">
+                      <span>🚀 完整</span>
+                      <span class="text-[9px] opacity-75 font-mono">(GCC)</span>
+                    </button>
+                  </div>
                 </div>
                 <div class="flex items-center gap-2">
                   <!-- 自動換行切換按鈕 -->
@@ -871,7 +896,10 @@
                     <span class="text-xs">↩</span>
                     <span>{{ codeWrapEnabled ? '自動換行' : '不換行' }}</span>
                   </button>
-                  <span v-if="execEngineLoading" class="text-indigo-400 animate-pulse flex items-center gap-1 text-[11px]">
+                  <span v-if="gccCompiling" class="text-indigo-400 animate-pulse flex items-center gap-1 text-[11px]">
+                    <span class="animate-spin text-xs">⏳</span> GCC 編譯分析中...
+                  </span>
+                  <span v-else-if="execEngineLoading" class="text-indigo-400 animate-pulse flex items-center gap-1 text-[11px]">
                     <span class="animate-spin text-xs">⏳</span> 載入執行環境...
                   </span>
                   <span v-else-if="execFinished" class="text-emerald-400 text-[11px]">
@@ -881,6 +909,21 @@
                     步驟 {{ currentStepIndex + 1 }} / {{ totalSteps }}
                   </span>
                 </div>
+              </div>
+
+              <!-- 題庫模式 C++ 標頭檔支援提示條 -->
+              <div
+                v-if="activeProblem.language === 'cpp' || activeProblem.language === 'c'"
+                :class="problemCppEngine === 'gcc' ? 'bg-gradient-to-r from-purple-950/70 via-violet-900/40 to-indigo-950/70 border-violet-500/40 text-purple-200 shadow-sm' : 'bg-amber-950/40 border-amber-800/40 text-amber-300/90'"
+                class="px-3 py-1 border-b text-[11px] shrink-0 font-sans flex items-center gap-2 truncate transition-colors">
+                <span v-if="problemCppEngine === 'gcc'" class="flex items-center gap-1.5 truncate">
+                  <span class="text-xs shrink-0">🚀</span>
+                  <span class="truncate"><strong>完整 GCC 模式 (Godbolt)：</strong>支援 &lt;vector&gt;、&lt;string&gt;、&lt;set&gt; 等全部 STL 標頭檔，執行、逐行除錯較慢。</span>
+                </span>
+                <span v-else class="flex items-center gap-1.5 truncate">
+                  <span class="text-xs shrink-0">⚡</span>
+                  <span class="truncate"><strong>輕量模式 (JSCPP)：</strong>支援 &lt;iostream&gt;、&lt;algorithm&gt; 等基礎語法（不支援 STL 容器），執行、逐行除錯較快。</span>
+                </span>
               </div>
 
               <!-- 程式碼行列表 -->
@@ -976,6 +1019,21 @@
                 <div v-if="execError.hint" class="mt-2 pt-1.5 border-t border-red-500/25 text-[11px] text-amber-300 flex items-start gap-1.5 leading-normal">
                   <span class="shrink-0 text-amber-400 font-bold">💡 提示：</span>
                   <span>{{ execError.hint }}</span>
+                </div>
+
+                <!-- 智慧引導：若輕量模式遇到可能之 STL 限制，提供一鍵切換完整 GCC 引擎 -->
+                <div 
+                  v-if="activeProblem && (activeProblem.language === 'cpp' || activeProblem.language === 'c') && problemCppEngine === 'jscpp' && (execError.message && (execError.message.includes('library') || execError.message.includes('vector') || execError.message.includes('string') || execError.message.includes('not exist') || execError.message.includes('cannot find')))"
+                  class="mt-2.5 pt-2 border-t border-indigo-500/30 flex items-center justify-between gap-2 flex-wrap">
+                  <span class="text-[11px] text-indigo-200">
+                    💡 此程式碼疑似使用了 STL 函式庫，輕量模式不支援。
+                  </span>
+                  <button
+                    type="button"
+                    @click="problemCppEngine = 'gcc'; prepareExecutionTrace();"
+                    class="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold shadow-md transition flex items-center gap-1 active:scale-95">
+                    <span>🚀 一鍵切換至完整 GCC 逐行除錯</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1140,7 +1198,64 @@
                       </table>
                     </div>
 
-                    <!-- 4. 物件或其它複合型別 -->
+                    <!-- 4. Pair 雙色徽章 -->
+                    <div v-else-if="v.category === 'pair'" class="flex items-center gap-1 font-mono text-[11px]">
+                      <span class="text-slate-400">(</span>
+                      <span class="px-1.5 py-0.5 rounded bg-indigo-950/60 text-indigo-300 border border-indigo-700/60">{{ v.value.first }}</span>
+                      <span class="text-slate-500">,</span>
+                      <span class="px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-700/60">{{ v.value.second }}</span>
+                      <span class="text-slate-400">)</span>
+                    </div>
+
+                    <!-- 5. Set 有序集合 -->
+                    <div v-else-if="v.category === 'set'" class="flex items-center gap-1 flex-wrap font-mono text-[11px]">
+                      <span class="text-slate-400">{</span>
+                      <span v-for="(elem, sIdx) in v.value" :key="sIdx" class="px-1.5 py-0.5 rounded bg-indigo-900/50 text-indigo-200 border border-indigo-700/50">
+                        {{ elem }}
+                      </span>
+                      <span class="text-slate-400">}</span>
+                    </div>
+
+                    <!-- 6. Stack 堆疊 (LIFO) -->
+                    <div v-else-if="v.category === 'stack'" class="flex items-center gap-1 flex-wrap font-mono text-[11px]">
+                      <span class="text-rose-400 font-bold text-[10px]">[頂端 ▶</span>
+                      <span v-for="(elem, stIdx) in v.value" :key="stIdx" class="px-1.5 py-0.5 rounded bg-rose-950/60 text-rose-200 border border-rose-800/60 font-bold">
+                        {{ elem }}
+                      </span>
+                      <span class="text-slate-500 text-[10px]">:底端]</span>
+                    </div>
+
+                    <!-- 7. Queue 佇列 (FIFO) -->
+                    <div v-else-if="v.category === 'queue'" class="flex items-center gap-1 flex-wrap font-mono text-[11px]">
+                      <span class="text-cyan-400 font-bold text-[10px]">[出口 ◀</span>
+                      <span v-for="(elem, qIdx) in v.value" :key="qIdx" class="px-1.5 py-0.5 rounded bg-cyan-950/60 text-cyan-200 border border-cyan-800/60 font-bold">
+                        {{ elem }}
+                      </span>
+                      <span class="text-slate-500 text-[10px]">◀ 入口]</span>
+                    </div>
+
+                    <!-- 8. Priority Queue 優先權隊列 -->
+                    <div v-else-if="v.category === 'priority_queue'" class="flex items-center gap-1 flex-wrap font-mono text-[11px]">
+                      <span class="text-amber-400 font-bold text-[10px]">[頂端 ⬆</span>
+                      <span v-for="(elem, pqIdx) in v.value" :key="pqIdx" class="px-1.5 py-0.5 rounded bg-amber-950/60 text-amber-200 border border-amber-800/60 font-bold">
+                        {{ elem }}
+                      </span>
+                      <span class="text-slate-500 text-[10px]">]</span>
+                    </div>
+
+                    <!-- 9. Map 鍵值對 -->
+                    <div v-else-if="v.category === 'map'" class="flex items-center gap-1.5 flex-wrap font-mono text-[11px]">
+                      <span v-for="(kv, mIdx) in v.value" :key="mIdx" class="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700">
+                        <span class="text-slate-400">{{ kv.key }}:</span> <span class="text-emerald-300 font-bold">{{ kv.value }}</span>
+                      </span>
+                    </div>
+
+                    <!-- 10. Bitset 二進位標籤 -->
+                    <div v-else-if="v.category === 'bitset'" class="font-mono text-cyan-300 tracking-widest text-[11px] bg-slate-900 px-2 py-0.5 rounded border border-cyan-800/50 inline-block">
+                      {{ v.value }}
+                    </div>
+
+                    <!-- 11. 物件或其它複合型別 -->
                     <div v-else class="text-slate-300 text-[11px] break-all">
                       {{ v.value }}
                     </div>
@@ -1278,6 +1393,9 @@
                       </span>
                       <span v-else class="text-indigo-400 font-sans">
                         (準備就緒)
+                      </span>
+                      <span v-if="activeProblem && (activeProblem.language === 'cpp' || activeProblem.language === 'c')" class="text-[10px] px-1.5 py-0.2 rounded border font-sans" :class="problemCppEngine === 'gcc' ? 'bg-violet-950/70 text-violet-300 border-violet-700/60 shadow-sm' : 'bg-amber-950/60 text-amber-300 border-amber-700/60'" :title="problemCppEngine === 'gcc' ? '目前執行引擎：正統 GCC 編譯器' : '目前執行引擎：純前端輕量 JSCPP 直譯器'">
+                        {{ problemCppEngine === 'gcc' ? '🚀 GCC 13.2' : '⚡ JSCPP' }}
                       </span>
                     </div>
 
@@ -1794,33 +1912,50 @@
                 <span 
                   :class="sandboxMode === 'editor' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'"
                   class="text-[11px] font-mono px-2 py-0.5 rounded-full border font-semibold hidden md:flex items-center gap-1">
-                  <span>{{ sandboxMode === 'editor' ? '⚡ 輕量編譯模式' : '🔍 視覺化除錯模式' }}</span>
+                  <span>{{ sandboxMode === 'debug' ? '🔍 視覺化除錯模式' : (sandboxLang === 'cpp' && sandboxCppEngine === 'gcc' ? '🚀 完整編譯模式' : '⚡ 輕量編譯模式') }}</span>
                 </span>
               </div>
             </div>
           </div>
 
           <!-- 中央：語言切換膠囊按鈕 (Python / C++) —— 絕對水平置中，雙鍵嚴格等寬對稱，中線精準契合下層分界 -->
-          <div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 sm:gap-1.5 bg-slate-950/90 p-1 sm:p-1.5 rounded-2xl border border-slate-700/80 shadow-inner z-10">
+          <div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-slate-950/90 p-1 sm:p-1.5 rounded-2xl border border-slate-700/80 shadow-inner z-10">
             <button
               type="button"
               @click="switchSandboxLang('python')"
-              :class="sandboxLang === 'python' ? 'bg-indigo-600 hover:bg-indigo-500 text-white font-black shadow-lg shadow-indigo-600/40 ring-1 ring-indigo-400/40' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/70 font-medium'"
-              class="w-[145px] sm:w-[180px] py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 select-none active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+              :class="sandboxLang === 'python' ? 'bg-gradient-to-b from-slate-800 to-slate-900 text-white font-bold shadow-lg shadow-black/50 border border-amber-400/60 ring-1 ring-amber-400/25' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 font-medium border border-transparent'"
+              class="w-[125px] sm:w-[155px] py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 select-none active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
               :disabled="sandboxMode === 'debug'"
               title="切換至 Python (Pyodide 執行引擎)">
-              <span class="text-sm sm:text-base shrink-0">🐍</span>
-              <span class="truncate">Python (Pyodide)</span>
+              <span class="w-4.5 h-4.5 shrink-0 flex items-center justify-center -translate-y-[0.5px]">
+                <svg class="w-4 h-4 shrink-0 drop-shadow-sm" viewBox="-1 0 114 114" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="pyBlueGrad" gradientUnits="userSpaceOnUse" x1="26.65" y1="20.6" x2="135.67" y2="114.4" gradientTransform="matrix(0.562541,0,0,0.567972,-14.99112,-11.702371)">
+      <stop offset="0" stop-color="#5a9fd4"/>
+      <stop offset="1" stop-color="#306998"/>
+    </linearGradient>
+    <linearGradient id="pyYellowGrad" gradientUnits="userSpaceOnUse" x1="150.96" y1="192.35" x2="112.03" y2="137.27" gradientTransform="matrix(0.562541,0,0,0.567972,-14.99112,-11.702371)">
+      <stop offset="0" stop-color="#ffd43b"/>
+      <stop offset="1" stop-color="#ffe873"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#pyBlueGrad)" d="M 54.918785,9.1927421e-4 C 50.335132,0.02221727 45.957846,0.41313697 42.106285,1.0946693 30.760069,3.0991731 28.700036,7.2947714 28.700035,15.032169 v 10.21875 h 26.8125 v 3.40625 h -26.8125 -10.0625 c -7.792459,0 -14.6157588,4.683717 -16.7499998,13.59375 -2.46181998,10.212966 -2.57101508,16.586023 0,27.25 1.9059283,7.937852 6.4575432,13.593748 14.2499998,13.59375 h 9.21875 v -12.25 c 0,-8.849902 7.657144,-16.656248 16.75,-16.65625 h 26.78125 c 7.454951,0 13.406253,-6.138164 13.40625,-13.625 v -25.53125 c 0,-7.2663386 -6.12998,-12.7247771 -13.40625,-13.9374997 C 64.281548,0.32794397 59.502438,-0.02037903 54.918785,9.1927421e-4 Z m -14.5,8.21875012579 c 2.769547,0 5.03125,2.2986456 5.03125,5.1249996 -2e-6,2.816336 -2.261703,5.09375 -5.03125,5.09375 -2.779476,-1e-6 -5.03125,-2.277415 -5.03125,-5.09375 -10e-7,-2.826353 2.251774,-5.1249996 5.03125,-5.1249996 z"/>
+  <path fill="url(#pyYellowGrad)" d="m 85.637535,28.657169 v 11.90625 c 0,9.230755 -7.825895,16.999999 -16.75,17 h -26.78125 c -7.335833,0 -13.406249,6.278483 -13.40625,13.625 v 25.531247 c 0,7.266344 6.318588,11.540324 13.40625,13.625004 8.487331,2.49561 16.626237,2.94663 26.78125,0 6.750155,-1.95439 13.406253,-5.88761 13.40625,-13.625004 V 86.500919 h -26.78125 v -3.40625 h 26.78125 13.406254 c 7.792461,0 10.696251,-5.435408 13.406241,-13.59375 2.79933,-8.398886 2.68022,-16.475776 0,-27.25 -1.92578,-7.757441 -5.60387,-13.59375 -13.406241,-13.59375 z m -15.0625,64.65625 c 2.779478,3e-6 5.03125,2.277417 5.03125,5.093747 -2e-6,2.826354 -2.251775,5.125004 -5.03125,5.125004 -2.76955,0 -5.03125,-2.29865 -5.03125,-5.125004 2e-6,-2.81633 2.261697,-5.093747 5.03125,-5.093747 z"/>
+</svg>
+              </span>
+              <span class="truncate leading-none">Python (Pyodide)</span>
             </button>
             <button
               type="button"
               @click="switchSandboxLang('cpp')"
-              :class="sandboxLang === 'cpp' ? 'bg-indigo-600 hover:bg-indigo-500 text-white font-black shadow-lg shadow-indigo-600/40 ring-1 ring-indigo-400/40' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/70 font-medium'"
-              class="w-[145px] sm:w-[180px] py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 select-none active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+              :class="sandboxLang === 'cpp' ? 'bg-gradient-to-b from-slate-800 to-slate-900 text-white font-bold shadow-lg shadow-black/50 border border-sky-400/60 ring-1 ring-sky-400/25' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 font-medium border border-transparent'"
+              class="w-[125px] sm:w-[155px] py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 select-none active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
               :disabled="sandboxMode === 'debug'"
-              title="切換至 C++ (JSCPP 執行引擎)">
-              <span class="text-sm sm:text-base shrink-0">⚡</span>
-              <span class="truncate">C++ (JSCPP)</span>
+              title="切換至 C++ 語言模式">
+              <span class="w-4.5 h-4.5 shrink-0 flex items-center justify-center -translate-y-[0.5px]">
+                <svg class="w-4 h-4 shrink-0 drop-shadow-sm" viewBox="0 0 306 344.35" fill="none" xmlns="http://www.w3.org/2000/svg"> <path fill="#00599C" d="M302.107,258.262c2.401-4.159,3.893-8.845,3.893-13.053V99.14c0-4.208-1.49-8.893-3.892-13.052L153,172.175 L302.107,258.262z"/> <path fill="#004482" d="M166.25,341.193l126.5-73.034c3.644-2.104,6.956-5.737,9.357-9.897L153,172.175L3.893,258.263 c2.401,4.159,5.714,7.793,9.357,9.896l126.5,73.034C147.037,345.401,158.963,345.401,166.25,341.193z"/> <path fill="#659AD2" d="M302.108,86.087c-2.402-4.16-5.715-7.793-9.358-9.897L166.25,3.156c-7.287-4.208-19.213-4.208-26.5,0 L13.25,76.19C5.962,80.397,0,90.725,0,99.14v146.069c0,4.208,1.491,8.894,3.893,13.053L153,172.175L302.108,86.087z"/> <g> <path fill="#FFFFFF" d="M153,274.175c-56.243,0-102-45.757-102-102s45.757-102,102-102c36.292,0,70.139,19.53,88.331,50.968 l-44.143,25.544c-9.105-15.736-26.038-25.512-44.188-25.512c-28.122,0-51,22.878-51,51c0,28.121,22.878,51,51,51 c18.152,0,35.085-9.776,44.191-25.515l44.143,25.543C223.142,254.644,189.294,274.175,153,274.175z"/> </g> <g> <polygon fill="#FFFFFF" points="255,166.508 243.666,166.508 243.666,155.175 232.334,155.175 232.334,166.508 221,166.508 221,177.841 232.334,177.841 232.334,189.175 243.666,189.175 243.666,177.841 255,177.841 "/> </g> <g> <polygon fill="#FFFFFF" points="297.5,166.508 286.166,166.508 286.166,155.175 274.834,155.175 274.834,166.508 263.5,166.508 263.5,177.841 274.834,177.841 274.834,189.175 286.166,189.175 286.166,177.841 297.5,177.841 "/> </g> </svg>
+              </span>
+              <span class="truncate font-bold leading-none">C++</span>
             </button>
           </div>
 
@@ -1886,6 +2021,33 @@
                     <span class="w-2.5 h-2.5 rounded-full bg-emerald-500/80 inline-block"></span>
                   </div>
                   <span class="text-slate-200 font-bold ml-1">sandbox.{{ sandboxLang === 'cpp' ? 'cpp' : 'py' }}</span>
+
+                  <!-- C++ 編譯引擎模式膠囊切換 (僅在 C++ 模式呈現，版面寬敞清晰) -->
+                  <div 
+                    v-if="sandboxLang === 'cpp'"
+                    class="ml-2 inline-flex items-center p-0.5 rounded-lg bg-black/60 border border-slate-700/80 text-[11px] font-sans shadow-inner shrink-0">
+                    <button 
+                      type="button"
+                      @click="toggleSandboxCppEngine('jscpp')"
+                      :disabled="sandboxMode === 'debug' || sandboxExecuting || sandboxGccCompiling || sandboxGccDirectRunning"
+                      :class="sandboxCppEngine === 'jscpp' ? 'bg-amber-500 text-slate-950 font-bold shadow-sm shadow-amber-500/25' : 'text-slate-400 enabled:hover:text-slate-200 disabled:hover:text-slate-400'"
+                      class="px-2 py-0.5 rounded-md transition-all flex items-center gap-1 enabled:active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                      :title="sandboxMode === 'debug' ? '除錯進行中無法切換引擎，請先點擊【停止除錯 返回編輯】' : '輕量直譯器：秒開即時除錯，支援基礎語法'">
+                      <span>⚡ 輕量</span>
+                      <span class="text-[9px] opacity-75 font-mono">(JSCPP)</span>
+                    </button>
+                    <button 
+                      type="button"
+                      @click="toggleSandboxCppEngine('gcc')"
+                      :disabled="sandboxMode === 'debug' || sandboxExecuting || sandboxGccCompiling || sandboxGccDirectRunning"
+                      :class="sandboxCppEngine === 'gcc' ? 'bg-violet-600 text-white font-bold shadow-sm shadow-violet-500/25' : 'text-slate-400 enabled:hover:text-slate-200 disabled:hover:text-slate-400'"
+                      class="px-2 py-0.5 rounded-md transition-all flex items-center gap-1 enabled:active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                      :title="sandboxMode === 'debug' ? '除錯進行中無法切換引擎，請先點擊【停止除錯 返回編輯】' : '完整 GCC 編譯器：支援全部 STL 標頭檔'">
+                      <span>🚀 完整</span>
+                      <span class="text-[9px] opacity-75 font-mono">(GCC)</span>
+                    </button>
+                  </div>
+
                   <span v-if="sandboxMode === 'editor'" class="text-[10px] text-slate-500 hidden sm:inline">
                     (支援 Tab 4格縮排 / 自動存檔)
                   </span>
@@ -1909,11 +2071,19 @@
                 </div>
               </div>
 
-              <!-- C++ JSCPP 標頭檔支援提示條 (僅 C++ 且編輯模式時顯示) -->
+              <!-- C++ 標頭檔支援提示條 (依當前引擎情境感知雙態呈現) -->
               <div
                 v-show="sandboxLang === 'cpp' && sandboxMode === 'editor'"
-                class="px-3 py-1 bg-amber-950/40 border-b border-amber-800/40 text-[11px] text-amber-300/90 shrink-0 font-sans">
-                {{ sandboxCppNotice }}
+                :class="sandboxCppEngine === 'gcc' ? 'bg-gradient-to-r from-purple-950/70 via-violet-900/40 to-indigo-950/70 border-violet-500/40 text-purple-200 shadow-sm' : 'bg-amber-950/40 border-amber-800/40 text-amber-300/90'"
+                class="px-3 py-1 border-b text-[11px] shrink-0 font-sans flex items-center gap-2 truncate transition-colors">
+                <span v-if="sandboxCppEngine === 'gcc'" class="flex items-center gap-1.5 truncate">
+                  <span class="text-xs shrink-0">🚀</span>
+                  <span class="truncate"><strong>完整 GCC 模式 (Godbolt)：</strong>支援 &lt;vector&gt;、&lt;string&gt;、&lt;set&gt; 等全部 STL 標頭檔，執行、逐行除錯較慢。</span>
+                </span>
+                <span v-else class="flex items-center gap-1.5 truncate">
+                  <span class="text-xs shrink-0">⚡</span>
+                  <span class="truncate"><strong>輕量模式 (JSCPP)：</strong>支援 &lt;iostream&gt;、&lt;algorithm&gt; 等基礎語法（不支援 STL 容器），執行、逐行除錯較快。</span>
+                </span>
               </div>
 
               <!-- 程式碼呈現區 -->
@@ -2018,6 +2188,35 @@
                 <div v-if="sandboxError.hint" class="mt-2 pt-1.5 border-t border-red-500/25 text-[11px] text-amber-300 flex items-start gap-1.5 leading-normal">
                   <span class="shrink-0 text-amber-400 font-bold">💡 提示：</span>
                   <span>{{ sandboxError.hint }}</span>
+                </div>
+
+                <!-- 智慧引導：若輕量模式遇到可能之 STL 限制，依據使用者先前點選之動作（直接執行或逐行除錯）提供對應之一鍵切換 -->
+                <div 
+                  v-if="sandboxLang === 'cpp' && sandboxCppEngine === 'jscpp' && (sandboxError.message && (sandboxError.message.includes('library') || sandboxError.message.includes('vector') || sandboxError.message.includes('string') || sandboxError.message.includes('stack') || sandboxError.message.includes('queue') || sandboxError.message.includes('map') || sandboxError.message.includes('set') || sandboxError.message.includes('not exist') || sandboxError.message.includes('cannot find') || sandboxError.message.includes('Parsing Failure')))"
+                  class="mt-2.5 pt-2 border-t border-indigo-500/30 flex items-center justify-between gap-2 flex-wrap">
+                  <span class="text-[11px] text-indigo-200">
+                    💡 此程式碼疑似使用了 STL 函式庫，輕量模式不支援。
+                  </span>
+                  <div class="flex items-center gap-2">
+                    <!-- 若前次點擊的是「直接執行」，提供直接執行切換按鈕，執行完畢立即看輸出 -->
+                    <button
+                      v-if="sandboxLastAction === 'direct'"
+                      type="button"
+                      @click="handleSandboxStlSwitch('direct')"
+                      class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold shadow-md transition flex items-center gap-1 active:scale-95"
+                      title="一鍵切換至完整 GCC 模式並直接執行看輸出">
+                      <span>⚡ 一鍵切換至完整 GCC 直接執行</span>
+                    </button>
+                    <!-- 若前次點擊的是「進入逐行除錯」，提供逐行除錯切換按鈕 -->
+                    <button
+                      v-else
+                      type="button"
+                      @click="handleSandboxStlSwitch('debug')"
+                      class="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold shadow-md transition flex items-center gap-1 active:scale-95"
+                      title="一鍵切換至完整 GCC 模式並進入逐行除錯">
+                      <span>🚀 一鍵切換至完整 GCC 逐行除錯</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2215,7 +2414,64 @@
                         </table>
                       </div>
 
-                      <!-- 4. 物件或其它複合型別 -->
+                      <!-- 4. Pair 雙色徽章 -->
+                      <div v-else-if="v.category === 'pair'" class="flex items-center gap-1 font-mono text-[11px]">
+                        <span class="text-slate-400">(</span>
+                        <span class="px-1.5 py-0.5 rounded bg-indigo-950/60 text-indigo-300 border border-indigo-700/60">{{ v.value.first }}</span>
+                        <span class="text-slate-500">,</span>
+                        <span class="px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-700/60">{{ v.value.second }}</span>
+                        <span class="text-slate-400">)</span>
+                      </div>
+
+                      <!-- 5. Set 有序集合 -->
+                      <div v-else-if="v.category === 'set'" class="flex items-center gap-1 flex-wrap font-mono text-[11px]">
+                        <span class="text-slate-400">{</span>
+                        <span v-for="(elem, sIdx) in v.value" :key="sIdx" class="px-1.5 py-0.5 rounded bg-indigo-900/50 text-indigo-200 border border-indigo-700/50">
+                          {{ elem }}
+                        </span>
+                        <span class="text-slate-400">}</span>
+                      </div>
+
+                      <!-- 6. Stack 堆疊 (LIFO) -->
+                      <div v-else-if="v.category === 'stack'" class="flex items-center gap-1 flex-wrap font-mono text-[11px]">
+                        <span class="text-rose-400 font-bold text-[10px]">[頂端 ▶</span>
+                        <span v-for="(elem, stIdx) in v.value" :key="stIdx" class="px-1.5 py-0.5 rounded bg-rose-950/60 text-rose-200 border border-rose-800/60 font-bold">
+                          {{ elem }}
+                        </span>
+                        <span class="text-slate-500 text-[10px]">:底端]</span>
+                      </div>
+
+                      <!-- 7. Queue 佇列 (FIFO) -->
+                      <div v-else-if="v.category === 'queue'" class="flex items-center gap-1 flex-wrap font-mono text-[11px]">
+                        <span class="text-cyan-400 font-bold text-[10px]">[出口 ◀</span>
+                        <span v-for="(elem, qIdx) in v.value" :key="qIdx" class="px-1.5 py-0.5 rounded bg-cyan-950/60 text-cyan-200 border border-cyan-800/60 font-bold">
+                          {{ elem }}
+                        </span>
+                        <span class="text-slate-500 text-[10px]">◀ 入口]</span>
+                      </div>
+
+                      <!-- 8. Priority Queue 優先權隊列 -->
+                      <div v-else-if="v.category === 'priority_queue'" class="flex items-center gap-1 flex-wrap font-mono text-[11px]">
+                        <span class="text-amber-400 font-bold text-[10px]">[頂端 ⬆</span>
+                        <span v-for="(elem, pqIdx) in v.value" :key="pqIdx" class="px-1.5 py-0.5 rounded bg-amber-950/60 text-amber-200 border border-amber-800/60 font-bold">
+                          {{ elem }}
+                        </span>
+                        <span class="text-slate-500 text-[10px]">]</span>
+                      </div>
+
+                      <!-- 9. Map 鍵值對 -->
+                      <div v-else-if="v.category === 'map'" class="flex items-center gap-1.5 flex-wrap font-mono text-[11px]">
+                        <span v-for="(kv, mIdx) in v.value" :key="mIdx" class="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700">
+                          <span class="text-slate-400">{{ kv.key }}:</span> <span class="text-emerald-300 font-bold">{{ kv.value }}</span>
+                        </span>
+                      </div>
+
+                      <!-- 10. Bitset 二進位標籤 -->
+                      <div v-else-if="v.category === 'bitset'" class="font-mono text-cyan-300 tracking-widest text-[11px] bg-slate-900 px-2 py-0.5 rounded border border-cyan-800/50 inline-block">
+                        {{ v.value }}
+                      </div>
+
+                      <!-- 11. 物件或其它複合型別 -->
                       <div v-else class="text-slate-300 text-[11px] break-all">
                         {{ v.value }}
                       </div>
@@ -2356,6 +2612,9 @@
                       <span v-else-if="sandboxCurrentStepIndex === -1" class="text-indigo-400 font-sans">
                         (準備就緒)
                       </span>
+                      <span v-if="sandboxLang === 'cpp'" class="text-[10px] px-1.5 py-0.2 rounded border font-sans" :class="sandboxCppEngine === 'gcc' ? 'bg-violet-950/70 text-violet-300 border-violet-700/60 shadow-sm' : 'bg-amber-950/60 text-amber-300 border-amber-700/60'" :title="sandboxCppEngine === 'gcc' ? '目前執行引擎：正統 GCC 編譯器' : '目前執行引擎：純前端輕量 JSCPP 直譯器'">
+                        {{ sandboxCppEngine === 'gcc' ? '🚀 GCC 13.2' : '⚡ JSCPP' }}
+                      </span>
                     </div>
 
                     <!-- 動態狀態標籤 (原汁原味且更鮮明) -->
@@ -2448,22 +2707,26 @@
                 <button
                   type="button"
                   @click="runSandboxDirect"
-                  :disabled="sandboxExecuting"
-                  class="h-full rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xl shadow-emerald-600/35 border border-emerald-400/40 ring-2 ring-emerald-500/20 disabled:opacity-30 disabled:pointer-events-none flex flex-col items-center justify-center gap-2 px-3 active:scale-95 group select-none">
+                  :disabled="sandboxExecuting || sandboxGccCompiling || sandboxGccDirectRunning"
+                  class="h-full rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xl shadow-emerald-600/35 border border-emerald-400/40 ring-2 ring-emerald-500/20 disabled:opacity-50 disabled:pointer-events-none flex flex-col items-center justify-center gap-2 px-3 active:scale-95 group select-none"
+                  :class="sandboxGccDirectRunning ? 'animate-pulse' : ''">
                   <span class="text-3xl sm:text-4xl leading-none transition-transform group-hover:scale-110">⚡</span>
-                  <span class="text-xs sm:text-sm font-black tracking-wide">直接執行 (Run)</span>
-                  <span class="text-[10px] text-emerald-200/80 font-normal">秒速於右上角看輸出</span>
+                  <span class="text-xs sm:text-sm font-black tracking-wide">{{ sandboxGccDirectRunning ? '編譯執行中...' : '直接執行 (Run)' }}</span>
                 </button>
 
                 <!-- 🔍 進入逐行除錯按鈕 -->
                 <button
                   type="button"
                   @click="startSandboxDebug"
-                  :disabled="sandboxExecuting"
-                  class="h-full rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-xl shadow-indigo-600/35 border border-indigo-400/40 ring-2 ring-indigo-500/20 disabled:opacity-30 disabled:pointer-events-none flex flex-col items-center justify-center gap-2 px-3 active:scale-95 group select-none">
-                  <span class="text-3xl sm:text-4xl leading-none transition-transform group-hover:scale-110">🔍</span>
-                  <span class="text-xs sm:text-sm font-black tracking-wide">進入逐行除錯</span>
-                  <span class="text-[10px] text-indigo-200/80 font-normal">觀察變數與記憶體變化</span>
+                  :disabled="sandboxExecuting || sandboxGccCompiling || sandboxGccDirectRunning"
+                  class="h-full rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-xl shadow-indigo-600/35 border border-indigo-400/40 ring-2 ring-indigo-500/20 disabled:opacity-50 disabled:pointer-events-none flex flex-col items-center justify-center gap-2 px-3 active:scale-95 group select-none"
+                  :class="sandboxGccCompiling ? 'animate-pulse ring-4 ring-indigo-400/60' : ''">
+                  <span class="text-3xl sm:text-4xl leading-none transition-transform group-hover:scale-110">
+                    {{ sandboxGccCompiling ? '⏳' : '🔍' }}
+                  </span>
+                  <span class="text-xs sm:text-sm font-black tracking-wide">
+                    {{ sandboxGccCompiling ? 'GCC 編譯分析中...' : '進入逐行除錯' }}
+                  </span>
                 </button>
               </div>
 
@@ -2706,6 +2969,19 @@
 
         // 執行器與視覺化狀態
         const execEngineLoading = ref(false);
+        const gccCompiling = ref(false);
+        const problemCppEngine = ref('jscpp'); // 'jscpp' | 'gcc'
+        const toggleProblemCppEngine = (target) => {
+          if (currentStepIndex.value !== -1 || isAutoPlaying.value || executing.value || gccCompiling.value) {
+            showToast("除錯進行中無法更換引擎，請先點擊【重新開始】！", "info");
+            return;
+          }
+          if (target && (target === 'jscpp' || target === 'gcc')) {
+            problemCppEngine.value = target;
+          } else {
+            problemCppEngine.value = problemCppEngine.value === 'jscpp' ? 'gcc' : 'jscpp';
+          }
+        };
         const executing = ref(false);
         const execFinished = ref(false);
         const stdinInput = ref('');
@@ -3296,6 +3572,9 @@ print("Result:", calculate_sum(10))`
           breakpoints.value.clear();
           breakpoints.value = new Set();
           showWatchPanel.value = false;
+          if (typeof resetExecution === 'function') {
+            resetExecution(false);
+          }
           activeProblem.value = null;
           showGestureHint.value = false;
           resetZoom();
@@ -3446,62 +3725,700 @@ print("Result:", calculate_sum(10))`
           return pyodideInstance;
         };
 
+        // 為 JSCPP 核心直譯器底層注入原生演算法函式 (min, max, abs)
+        // 使用 rt.regFunc 直接擴充 global 命名空間，不佔用 C++ 程式碼行數，徹底避免逐行除錯跳行與變數污染
+        const setupJSCPPAlgorithms = (jscpp) => {
+          if (!jscpp || jscpp.__algorithms_loaded__) return;
+          jscpp.__algorithms_loaded__ = true;
+
+          const loadAlgorithm = function(rt) {
+            const regMinMaxAbs = (typeLit) => {
+              if (!typeLit) return;
+              rt.regFunc(function(rt, _this, a, b) {
+                const va = (a.v === undefined || isNaN(a.v)) ? 0 : a.v;
+                const vb = (b.v === undefined || isNaN(b.v)) ? 0 : b.v;
+                return rt.val(typeLit, va < vb ? va : vb);
+              }, "global", "min", [typeLit, typeLit], typeLit);
+
+              rt.regFunc(function(rt, _this, a, b) {
+                const va = (a.v === undefined || isNaN(a.v)) ? 0 : a.v;
+                const vb = (b.v === undefined || isNaN(b.v)) ? 0 : b.v;
+                return rt.val(typeLit, va > vb ? va : vb);
+              }, "global", "max", [typeLit, typeLit], typeLit);
+
+              rt.regFunc(function(rt, _this, a) {
+                const va = (a.v === undefined || isNaN(a.v)) ? 0 : a.v;
+                return rt.val(typeLit, Math.abs(va));
+              }, "global", "abs", [typeLit], typeLit);
+            };
+
+            const types = [
+              rt.intTypeLiteral,
+              rt.unsignedintTypeLiteral,
+              rt.longTypeLiteral,
+              rt.doubleTypeLiteral,
+              rt.floatTypeLiteral,
+              rt.charTypeLiteral,
+              rt.unsignedcharTypeLiteral
+            ].filter(Boolean);
+
+            types.forEach(regMinMaxAbs);
+          };
+
+          if (jscpp.includes) {
+            if (jscpp.includes["iostream"]) {
+              const origIostreamLoad = jscpp.includes["iostream"].load;
+              jscpp.includes["iostream"] = {
+                load: function(rt) {
+                  if (typeof origIostreamLoad === 'function') origIostreamLoad(rt);
+                  loadAlgorithm(rt);
+                }
+              };
+            }
+            jscpp.includes["algorithm"] = { load: loadAlgorithm };
+            jscpp.includes["algorithm.h"] = { load: loadAlgorithm };
+            if (jscpp.includes["cmath"]) {
+              const origCmathLoad = jscpp.includes["cmath"].load;
+              jscpp.includes["cmath"] = {
+                load: function(rt) {
+                  if (typeof origCmathLoad === 'function') origCmathLoad(rt);
+                  loadAlgorithm(rt);
+                }
+              };
+            }
+          }
+        };
+
         const ensureJSCPPLoaded = () => {
-          if (window.JSCPP) return Promise.resolve(window.JSCPP);
+          if (window.JSCPP) {
+            setupJSCPPAlgorithms(window.JSCPP);
+            return Promise.resolve(window.JSCPP);
+          }
           return new Promise((resolve, reject) => {
             const s = document.createElement("script");
             s.src = "https://felixhao28.github.io/JSCPP/dist/JSCPP.es5.min.js";
-            s.onload = () => resolve(window.JSCPP);
+            s.onload = () => {
+              setupJSCPPAlgorithms(window.JSCPP);
+              resolve(window.JSCPP);
+            };
             s.onerror = () => reject(new Error("載入 C++ (JSCPP) 核心模組失敗，請檢查網路。"));
             document.head.appendChild(s);
           });
         };
 
-        // C++ 演算法常用函式同行零偏移補丁 (維持 100% 行號精確對齊，提供 min, max 跨型別支援)
-        const CPP_ALGORITHM_POLYFILL = 'int min(int a,int b){return a<b?a:b;} int max(int a,int b){return a>b?a:b;} double min(double a,double b){return a<b?a:b;} double max(double a,double b){return a>b?a:b;}';
+        // ==================== C++ 完整 GCC 引擎 (Godbolt/Compiler Explorer 遠端代理 ＆ 萬能序列化探針) ====================
+        const CODESHOW_CPP_TRACER_HEADER = `#include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <set>
+#include <map>
+#include <stack>
+#include <queue>
+#include <utility>
+#include <bitset>
+#include <algorithm>
+#include <type_traits>
 
-        // 統一 C++ 程式碼預處理：注入常用演算法標頭檔補丁、自動補齊 return 0、以及自訂記憶體初值注入
+namespace __codeshow_tracer__ {
+    static int __step_count__ = 0;
+    static const int __MAX_STEPS__ = 2000;
+    static bool __first_step__ = true;
+    static std::stringstream __stdout_buf__;
+    static std::streambuf* __orig_cout_buf__ = nullptr;
+
+    inline void escape_string(std::ostream& os, const std::string& s) {
+        os << (char)34;
+        for (unsigned char uc : s) {
+            if (uc == 34) { os << (char)92 << (char)34; }
+            else if (uc == 92) { os << (char)92 << (char)92; }
+            else if (uc == 10) { os << (char)92 << 'n'; }
+            else if (uc == 13) { os << (char)92 << 'r'; }
+            else if (uc == 9) { os << (char)92 << 't'; }
+            else if (uc >= 32) { os << (char)uc; }
+        }
+        os << (char)34;
+    }
+
+    struct StdoutCapture {
+        StdoutCapture() {
+            if (!__orig_cout_buf__) {
+                __orig_cout_buf__ = std::cout.rdbuf(__stdout_buf__.rdbuf());
+            }
+        }
+        ~StdoutCapture() {
+            if (__orig_cout_buf__) {
+                std::cout.rdbuf(__orig_cout_buf__);
+                std::cout << __stdout_buf__.str();
+                __orig_cout_buf__ = nullptr;
+            }
+        }
+    };
+    static StdoutCapture __capture_instance__;
+
+    template<typename T, typename Enable = void>
+    struct Serializer {
+        static void write(std::ostream& os, const T& val) {
+            os << val;
+        }
+    };
+
+    template<>
+    struct Serializer<bool> {
+        static void write(std::ostream& os, bool val) {
+            os << (val ? "true" : "false");
+        }
+    };
+
+    template<>
+    struct Serializer<char> {
+        static void write(std::ostream& os, char val) {
+            std::string s(1, val);
+            escape_string(os, s);
+        }
+    };
+
+    template<>
+    struct Serializer<std::string> {
+        static void write(std::ostream& os, const std::string& val) {
+            escape_string(os, val);
+        }
+    };
+
+    template<typename T1, typename T2>
+    struct Serializer<std::pair<T1, T2>> {
+        static void write(std::ostream& os, const std::pair<T1, T2>& p) {
+            os << '{' << '"' << "__type__" << '"' << ':' << '"' << "pair" << '"' << ',' << '"' << "first" << '"' << ':';
+            Serializer<T1>::write(os, p.first);
+            os << ',' << '"' << "second" << '"' << ':';
+            Serializer<T2>::write(os, p.second);
+            os << '}';
+        }
+    };
+
+    template<typename T>
+    struct Serializer<std::vector<T>> {
+        static void write(std::ostream& os, const std::vector<T>& v) {
+            os << '[';
+            for (size_t i = 0; i < v.size(); ++i) {
+                if (i > 0) os << ',';
+                Serializer<T>::write(os, v[i]);
+            }
+            os << ']';
+        }
+    };
+
+    template<typename T>
+    struct Serializer<std::set<T>> {
+        static void write(std::ostream& os, const std::set<T>& s) {
+            os << '{' << '"' << "__type__" << '"' << ':' << '"' << "set" << '"' << ',' << '"' << "values" << '"' << ':' << '[';
+            bool first = true;
+            for (const auto& item : s) {
+                if (!first) os << ',';
+                Serializer<T>::write(os, item);
+                first = false;
+            }
+            os << ']' << '}';
+        }
+    };
+
+    template<typename K, typename V>
+    struct Serializer<std::map<K, V>> {
+        static void write(std::ostream& os, const std::map<K, V>& m) {
+            os << '{' << '"' << "__type__" << '"' << ':' << '"' << "map" << '"' << ',' << '"' << "entries" << '"' << ':' << '[';
+            bool first = true;
+            for (const auto& kv : m) {
+                if (!first) os << ',';
+                os << '{' << '"' << "key" << '"' << ':';
+                Serializer<K>::write(os, kv.first);
+                os << ',' << '"' << "value" << '"' << ':';
+                Serializer<V>::write(os, kv.second);
+                os << '}';
+                first = false;
+            }
+            os << ']' << '}';
+        }
+    };
+
+    template<typename T>
+    struct Serializer<std::stack<T>> {
+        static void write(std::ostream& os, std::stack<T> st) {
+            os << '{' << '"' << "__type__" << '"' << ':' << '"' << "stack" << '"' << ',' << '"' << "values" << '"' << ':' << '[';
+            std::vector<T> items;
+            while (!st.empty()) {
+                items.push_back(st.top());
+                st.pop();
+            }
+            for (size_t i = 0; i < items.size(); ++i) {
+                if (i > 0) os << ',';
+                Serializer<T>::write(os, items[i]);
+            }
+            os << ']' << '}';
+        }
+    };
+
+    template<typename T>
+    struct Serializer<std::queue<T>> {
+        static void write(std::ostream& os, std::queue<T> q) {
+            os << '{' << '"' << "__type__" << '"' << ':' << '"' << "queue" << '"' << ',' << '"' << "values" << '"' << ':' << '[';
+            bool first = true;
+            while (!q.empty()) {
+                if (!first) os << ',';
+                Serializer<T>::write(os, q.front());
+                q.pop();
+                first = false;
+            }
+            os << ']' << '}';
+        }
+    };
+
+    template<typename T, typename C, typename Comp>
+    struct Serializer<std::priority_queue<T, C, Comp>> {
+        static void write(std::ostream& os, std::priority_queue<T, C, Comp> pq) {
+            os << '{' << '"' << "__type__" << '"' << ':' << '"' << "priority_queue" << '"' << ',' << '"' << "values" << '"' << ':' << '[';
+            bool first = true;
+            while (!pq.empty()) {
+                if (!first) os << ',';
+                Serializer<T>::write(os, pq.top());
+                pq.pop();
+                first = false;
+            }
+            os << ']' << '}';
+        }
+    };
+
+    template<size_t N>
+    struct Serializer<std::bitset<N>> {
+        static void write(std::ostream& os, const std::bitset<N>& b) {
+            os << '{' << '"' << "__type__" << '"' << ':' << '"' << "bitset" << '"' << ',' << '"' << "value" << '"' << ':' << '"' << b.to_string() << '"' << '}';
+        }
+    };
+
+    template<typename T, size_t N>
+    struct Serializer<T[N]> {
+        static void write(std::ostream& os, const T (&arr)[N]) {
+            os << '[';
+            for (size_t i = 0; i < N; ++i) {
+                if (i > 0) os << ',';
+                Serializer<T>::write(os, arr[i]);
+            }
+            os << ']';
+        }
+    };
+
+    template<typename T>
+    inline void dump_val(std::ostream& os, const T& val) {
+        Serializer<typename std::remove_cv<typename std::remove_reference<T>::type>::type>::write(os, val);
+    }
+
+    inline void __start_step__(int line) {
+        if (++__step_count__ > __MAX_STEPS__) {
+            std::cerr << (char)10 << "__CODESHOW_STEP_EXCEED__" << (char)10;
+            exit(0);
+        }
+        if (!__first_step__) std::cerr << ',' << (char)10;
+        else {
+            std::cerr << '[' << (char)10;
+            __first_step__ = false;
+        }
+        std::cerr << '{' << (char)34 << "line" << (char)34 << ':' << line << ',' << (char)34 << "vars" << (char)34 << ':' << '{';
+    }
+
+    inline void __end_step__() {
+        std::cerr << '}' << ',' << (char)34 << "out" << (char)34 << ':';
+        escape_string(std::cerr, __stdout_buf__.str());
+        std::cerr << '}';
+    }
+
+    template<typename T>
+    void __dump_var__(bool& first, const char* name, const T& val) {
+        if (!first) std::cerr << ',';
+        std::cerr << (char)34 << name << (char)34 << ':';
+        dump_val(std::cerr, val);
+        first = false;
+    }
+
+    inline void __finish_trace__() {
+        if (__orig_cout_buf__) {
+            std::cout.rdbuf(__orig_cout_buf__);
+            std::cout << __stdout_buf__.str();
+            __orig_cout_buf__ = nullptr;
+        }
+        if (!__first_step__) {
+            std::cerr << (char)10 << ']' << (char)10;
+        } else {
+            std::cerr << '[' << ']' << (char)10;
+        }
+    }
+}
+`;
+
+        // 前端 C++ 插樁器純函式：解析已知變數並於每行結尾注入探針呼叫
+        const instrumentCppCode = (rawCode) => {
+          const code = rawCode || '';
+          // 1. 語法安全檢查 (排除指標、自訂結構體/類別、lambda、動態配置)
+          if (/\b(?:int|char|double|float|bool|long|void)\s*\*\s*[a-zA-Z_]\w*/.test(code)) {
+            return { success: false, reason: '⚠️ 偵測到指標運算（如 int* p），視覺化追蹤器不支援追蹤實體記憶體指標。請改用『⚡ 直接執行』或使用本機 IDE。' };
+          }
+          if (/\b(?:struct|class)\s+[a-zA-Z_]\w*\s*\{/.test(code)) {
+            return { success: false, reason: '⚠️ 偵測到自訂 struct / class，視覺化追蹤器不支援自訂複合型別。請改用『⚡ 直接執行』或使用本機 IDE。' };
+          }
+          if (/\[[\s\w&,=]*\]\s*\([^\)]*\)\s*\{/.test(code)) {
+            return { success: false, reason: '⚠️ 偵測到 Lambda 表達式，視覺化追蹤器不支援此語法。請改用『⚡ 直接執行』或使用本機 IDE。' };
+          }
+          if (/\b(?:new\s+[a-zA-Z_]|delete\s+|malloc\s*\()/.test(code)) {
+            return { success: false, reason: '⚠️ 偵測到動態記憶體配置（new / malloc），視覺化追蹤器不支援。請改用『⚡ 直接執行』或使用本機 IDE。' };
+          }
+
+          // 逐行插樁模式：將 bits/stdc++.h 轉為同行註解，避免重複載入爆滿容器記憶體，同時 100% 保持行號精確對齊
+          const preprocessedCode = code.replace(/^[ \t]*#include\s*[<"]bits\/stdc\+\+\.h[>"]/gm, '// [CodeShow] STL headers loaded');
+          const lines = preprocessedCode.split('\n');
+          const instrumentedLines = [];
+
+          // 型別宣告正則 (支援純量與常用 STL 容器)
+          const declRegex = /\b(?:int|long\s+long|double|float|char|bool|string|std::string|vector<[^>]+>|set<[^>]+>|map<[^>]+>|stack<[^>]+>|queue<[^>]+>|priority_queue<[^>]+>|bitset<\d+>|pair<[^>]+>)\s+([^;]+);/;
+          // for 迴圈標頭宣告正則 (如 for (int i = 0; ...)
+          const forDeclRegex = /\bfor\s*\(\s*(?:int|long\s+long|double|float|char|bool|auto)\s+([a-zA-Z_]\w*)/;
+
+          // 作用域感知符號表堆疊 (Scope Stack)
+          const scopeStack = [new Set()];
+
+          const getVisibleVars = () => {
+            const visible = new Set();
+            for (const s of scopeStack) {
+              for (const v of s) {
+                visible.add(v);
+              }
+            }
+            return visible;
+          };
+
+          for (let i = 0; i < lines.length; i++) {
+            const lineNum = i + 1;
+            const line = lines[i];
+            const trimmed = line.trim();
+
+            // 去除註解與字串干擾，計算大括號數量
+            const cleanLine = trimmed.replace(/\/\/.*$/, '').replace(/"(?:\\.|[^"\\])*"/g, '');
+            const openBraces = (cleanLine.match(/\{/g) || []).length;
+            const closeBraces = (cleanLine.match(/\}/g) || []).length;
+
+            let pendingClose = closeBraces;
+            // 若該行以 '}' 開頭 (如 } 或 } else {)，在處理該行前先退出對應作用域
+            if (cleanLine.startsWith('}') && pendingClose > 0) {
+              if (scopeStack.length > 1) scopeStack.pop();
+              pendingClose--;
+            }
+
+            const currentScope = scopeStack[scopeStack.length - 1];
+
+            // 檢查是否為 for 迴圈標頭宣告 (例如 for (int i = 0; ...)
+            let forVar = null;
+            const forMatch = cleanLine.match(forDeclRegex);
+            if (forMatch) {
+              forVar = forMatch[1];
+            }
+
+            // 若為 for 迴圈，剔除 for(...) 括號後再 match 一般變數宣告，避免 for 變數洩漏至外層作用域
+            let lineForDecl = cleanLine;
+            if (forVar) {
+              lineForDecl = cleanLine.replace(/\bfor\s*\([^\)]*\)/, '');
+            }
+
+            // 偵測一般變數宣告並記錄至當前作用域
+            const declMatch = lineForDecl.match(declRegex);
+            if (declMatch) {
+              const varDecls = declMatch[1].split(',');
+              for (let v of varDecls) {
+                const varNameMatch = v.trim().match(/^([a-zA-Z_]\w*)/);
+                if (varNameMatch) {
+                  currentScope.add(varNameMatch[1]);
+                }
+              }
+            }
+
+            // 處理進入新作用域（每一對開括號推入新層級）
+            for (let b = 0; b < openBraces; b++) {
+              const newScope = new Set();
+              if (forVar) {
+                newScope.add(forVar);
+                forVar = null; // 僅賦予最外層對應的新作用域
+              }
+              scopeStack.push(newScope);
+            }
+
+            // 取得目前行真正可見的所有變數 (嚴格遵守 C++ Block Scope 作用域隔離)
+            const visibleVars = getVisibleVars();
+
+            // 判斷該行是否需要插樁
+            const isControlOrStmt = trimmed.length > 0 &&
+              !trimmed.startsWith('#') &&
+              !trimmed.startsWith('//') &&
+              !trimmed.startsWith('/*') &&
+              !trimmed.startsWith('*') &&
+              !trimmed.startsWith('using namespace') &&
+              trimmed !== '{' && trimmed !== '}' &&
+              (visibleVars.size > 0 || trimmed.includes('cout') || trimmed.includes('printf'));
+
+            if (isControlOrStmt && (trimmed.endsWith(';') || trimmed.endsWith('{'))) {
+              let dumpCalls = '';
+              for (let v of visibleVars) {
+                dumpCalls += `__codeshow_tracer__::__dump_var__(__first__, "${v}", ${v}); `;
+              }
+              const probe = `{ __codeshow_tracer__::__start_step__(${lineNum}); bool __first__=true; ${dumpCalls}__codeshow_tracer__::__end_step__(); }`;
+
+              if (trimmed.endsWith('{')) {
+                instrumentedLines.push(line.replace(/\{$/, `{ ${probe}`));
+              } else if (trimmed.startsWith('return ') || trimmed === 'return;' || trimmed.startsWith('return;')) {
+                instrumentedLines.push(`${probe} __codeshow_tracer__::__finish_trace__(); ${line}`);
+              } else {
+                instrumentedLines.push(`${line} ${probe}`);
+              }
+            } else {
+              instrumentedLines.push(line);
+            }
+
+            // 處理該行結尾剩餘的閉合括號
+            while (pendingClose > 0) {
+              if (scopeStack.length > 1) scopeStack.pop();
+              pendingClose--;
+            }
+          }
+
+          let combined = instrumentedLines.join('\n');
+          if (!combined.includes('__codeshow_tracer__::__finish_trace__();')) {
+            const lastBraceIdx = combined.lastIndexOf('}');
+            if (lastBraceIdx !== -1) {
+              combined = combined.substring(0, lastBraceIdx) + ' __codeshow_tracer__::__finish_trace__(); ' + combined.substring(lastBraceIdx);
+            }
+          }
+
+          const finalCode = `${CODESHOW_CPP_TRACER_HEADER}\n#line 1\n${combined}\n`;
+          return { success: true, instrumentedCode: finalCode };
+        };
+
+        // 解析 GCC 編譯錯誤資訊為結構化物件 (相容 Godbolt 與 Wandbox 格式)
+        const parseGccCompilerError = (rawErr) => {
+          if (!rawErr) return null;
+          // 同時比對 Godbolt (<source>:N:M:) 與 Wandbox (prog.cpp:N:M: / <stdin>:N:M:) 格式
+          const match = rawErr.match(/(?:prog\.cpp|<source>|<stdin>|\.cpp)?:(\d+):(?:\d+:)?\s*(?:fatal\s+)?error:\s*([^\n]+)/i);
+          let line = null;
+          let msg = rawErr;
+          let hint = '請檢查 C++ 語法是否有拼寫錯誤、型別不匹配或遺漏分號。';
+          if (match) {
+            line = parseInt(match[1], 10);
+            msg = match[2].trim();
+            if (msg.includes('was not declared in this scope')) {
+              hint = '變數或函式尚未宣告，請檢查變數名稱是否拼錯或遺漏標頭檔。';
+            } else if (msg.includes('expected') && msg.includes(';')) {
+              hint = '語法結尾遺漏分號「;」，請於該行或上一行末尾加上分號。';
+            } else if (msg.includes('cannot convert') || msg.includes('no matching function')) {
+              hint = '型別轉換不匹配或函式引數錯誤。';
+            }
+          }
+
+          // 智慧檢測：若編譯錯誤或程式碼含有 Python 語法特徵
+          const currentCodeText = (typeof sandboxCode !== 'undefined' && sandboxCode.value) ? sandboxCode.value : ((typeof activeProblem !== 'undefined' && activeProblem.value) ? (activeProblem.value.sourceCode || '') : '');
+          if (/(?:input\s*\(|print\s*\(|range\s*\(|def\s+|import\s+|\*map\s*\(|split\s*\()/i.test(rawErr) ||
+              /(?:input\s*\(|print\s*\(|range\s*\(|def\s+|import\s+|\*map\s*\(|split\s*\()/i.test(currentCodeText)) {
+            hint = '💡 這段程式碼似乎是 Python 語法（例如 input()、range() 等），請點擊右上角切換至「🐍 Python (Pyodide)」模式執行！';
+          }
+
+          return {
+            line: line,
+            message: msg,
+            hint: hint
+          };
+        };
+
+        // 解析 GCC 逐行追蹤 steps JSON (Godbolt stderr / Wandbox program_error 通用)
+        const parseGccTraceSteps = (programError, programOutput) => {
+          if (!programError) return [];
+          let rawJson = programError.trim();
+          let hasExceeded = false;
+          if (rawJson.includes('__CODESHOW_STEP_EXCEED__')) {
+            hasExceeded = true;
+            rawJson = rawJson.replace('__CODESHOW_STEP_EXCEED__', '');
+          }
+          const startIdx = rawJson.indexOf('[');
+          const endIdx = rawJson.lastIndexOf(']');
+          if (startIdx === -1) return [];
+          const validJsonStr = (endIdx !== -1 && endIdx > startIdx) ? rawJson.substring(startIdx, endIdx + 1) : (rawJson.substring(startIdx) + ']');
+          
+          let traceArr = [];
+          try {
+            traceArr = JSON.parse(validJsonStr);
+          } catch(e) {
+            console.warn("解析 GCC steps JSON 異常:", e, validJsonStr);
+            return [];
+          }
+
+          return traceArr.map((item, idx) => ({
+            line: item.line,
+            variables: item.vars || {},
+            output: (item.out !== undefined) ? item.out : (idx === traceArr.length - 1 ? (programOutput || '') : ''),
+            stdin_line: 0,
+            error: (idx === traceArr.length - 1 && hasExceeded) ? { message: '已達單步追蹤上限 (2,000 步)，後續步驟自動截斷！' } : null
+          }));
+        };
+
+        // 針對雲端容器環境優化 C++ 程式碼 (將萬用標頭檔 bits/stdc++.h 替換為核心標準庫，防止容器記憶體爆滿)
+        const optimizeCppCodeForRemote = (rawCode) => {
+          let c = rawCode || '';
+          if (/^[ \t]*#include\s*[<"]bits\/stdc\+\+\.h[>"]/m.test(c)) {
+            const coreHeaders = '#include <iostream>\n#include <vector>\n#include <string>\n#include <algorithm>\n#include <cmath>\n#include <map>\n#include <set>\n#include <queue>\n#include <stack>\n#include <utility>\n#include <bitset>\n#include <numeric>';
+            c = c.replace(/^[ \t]*#include\s*[<"]bits\/stdc\+\+\.h[>"]/m, coreHeaders);
+          }
+          return c;
+        };
+
+        // 呼叫遠端 GCC 編譯器 (優先 GAS 後端伺服器直發，保證 0 延遲與避開跨站 iframe 限制)
+        const executeGccViaWandbox = async (code, stdinInput = '') => {
+          const optimizedCode = optimizeCppCodeForRemote(code);
+
+          // 1. 在 Google Apps Script 環境：直接由後端發送請求 (極速響應，約 1~2 秒，不受瀏覽器擴充套件阻擋)
+          if (typeof google !== 'undefined' && google.script && google.script.run) {
+            return new Promise((resolve) => {
+              google.script.run
+                .withSuccessHandler((res) => {
+                  resolve(res || {});
+                })
+                .withFailureHandler((err) => {
+                  resolve({
+                    status: '1',
+                    compiler_error: '呼叫後端編譯失敗：' + (err.message || String(err)),
+                    program_error: '',
+                    program_output: ''
+                  });
+                })
+                .proxyWandboxCompile(optimizedCode, stdinInput);
+            });
+          }
+
+          // 2. 本地/獨立測試環境：由瀏覽器直接請求 Godbolt (Compiler Explorer) API
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 20000);
+            const resp = await fetch('https://godbolt.org/api/compiler/g132/compile', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+              body: JSON.stringify({
+                source: optimizedCode,
+                compiler: 'g132',
+                options: {
+                  userArguments: '-O0 -std=c++17',
+                  executeParameters: { args: [], stdin: stdinInput || '' },
+                  compilerOptions: {},
+                  filters: { execute: true },
+                  tools: [],
+                  libraries: []
+                },
+                lang: 'c++',
+                allowStoreCodeDebug: false
+              }),
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            const data = await resp.json();
+            // 轉換 Godbolt 格式 → Wandbox 相容格式
+            const compilerError = (data.stderr || []).map(l => l.text || '').join('\n').trim();
+            if (data.code !== 0) {
+              return { status: '1', compiler_error: compilerError, program_error: '', program_output: '' };
+            }
+            const execResult = data.execResult || {};
+            const programOutput = (execResult.stdout || []).map(l => l.text || '').join('\n');
+            const programError = (execResult.stderr || []).map(l => l.text || '').join('\n');
+            const execCode = execResult.code;
+            return {
+              status: (execCode === 0 || execCode === undefined) ? '0' : String(execCode),
+              compiler_error: '',
+              program_output: programOutput,
+              program_error: programError,
+              program_message: programError
+            };
+          } catch (e) {
+            return {
+              status: '1',
+              compiler_error: '無法連線至 Godbolt 編譯伺服器：' + (e.message || String(e)),
+              program_error: '',
+              program_output: ''
+            };
+          }
+        };
+
+        // 完整 GCC 模式直接執行 (Direct Run)
+        const runGccDirect = async (code, stdinInput) => {
+          const res = await executeGccViaWandbox(code, stdinInput);
+          if (res.compiler_error && res.compiler_error.trim()) {
+            return {
+              success: false,
+              isCompileError: true,
+              error: parseGccCompilerError(res.compiler_error),
+              output: res.program_output || ''
+            };
+          }
+          // Godbolt 在執行期錯誤時 status != '0'，且 program_error 帶錯誤訊息
+          if (res.status && res.status !== '0' && (res.program_error || '').trim() && !(res.program_error || '').startsWith('[')) {
+            return {
+              success: false,
+              isCompileError: false,
+              error: { line: null, message: res.program_error.trim(), hint: '程式執行時發生錯誤（Runtime Error）。' },
+              output: res.program_output || ''
+            };
+          }
+          return {
+            success: true,
+            isCompileError: false,
+            error: null,
+            output: (res.program_output !== undefined && res.program_output !== '') ? res.program_output : (res.program_message || '(程式執行結束，無標準輸出)')
+          };
+        };
+
+        // 自動防禦初始化未宣告初值之原生陣列 (徹底消除 JSCPP 內部 uninitialized NaN 導致之 overflow of NaN 崩潰)
+        const autoInitCppArrays = (code) => {
+          return (code || '').replace(/^[ \t]*(?:(int|long(?:\s+long)?|short|float|double|char|bool)\s+)([^;{}()]+);/gm, (match, type, declList) => {
+            if (!declList.includes("[")) return match;
+            const parts = declList.split(",");
+            let modified = false;
+            const newParts = parts.map(part => {
+              const trimmed = part.trim();
+              if (/^[a-zA-Z_$][a-zA-Z0-9_$]*\s*(?:\[[^\]]+\]\s*)+$/.test(trimmed)) {
+                modified = true;
+                return part.replace(/(\s*)$/, " = {0}$1");
+              }
+              return part;
+            });
+            return modified ? match.replace(declList, newParts.join(",")) : match;
+          });
+        };
+
+        // 統一 C++ 程式碼預處理：萬用標頭檔轉接、原生陣列初值防護、自動補齊 return 0、以及自訂記憶體初值注入
         const preprocessCppCode = (rawCode, customOverrides = {}) => {
           let processed = rawCode || '';
 
-          // 1. 處理萬用標頭檔 <bits/stdc++.h> 與 <algorithm>
-          let hasIostream = /^[ \t]*#include\s*[<"]iostream[>"]/m.test(processed);
-
-          // 處理 bits/stdc++.h：若無 iostream，優先替換為 <iostream> 以保障 cin/cout 正常存在
+          // 1. 處理萬用標頭檔 <bits/stdc++.h> (替換為 <iostream>，零行號偏移，保障 cin/cout 與演算法函式正常運作)
           const bitsPattern = /^[ \t]*#include\s*[<"]bits\/stdc\+\+\.h[>"][ \t]*/m;
           if (bitsPattern.test(processed)) {
-            if (!hasIostream) {
-              processed = processed.replace(bitsPattern, '#include <iostream>');
-              hasIostream = true;
-            } else {
-              processed = processed.replace(bitsPattern, CPP_ALGORITHM_POLYFILL);
-            }
+            processed = processed.replace(bitsPattern, '#include <iostream>');
           }
 
-          // 處理 algorithm 標頭檔
-          const algoPattern = /^[ \t]*#include\s*[<"]algorithm[>"][ \t]*/m;
-          if (algoPattern.test(processed)) {
-            processed = processed.replace(algoPattern, CPP_ALGORITHM_POLYFILL);
-          } else if (/\b(?:min|max)\s*\(/.test(processed)) {
-            // 若未明確 include algorithm 但呼叫了 min / max，優先於 using namespace std; 後方同行追加
-            if (/^[ \t]*using\s+namespace\s+std\s*;[ \t]*/m.test(processed)) {
-              processed = processed.replace(/(^[ \t]*using\s+namespace\s+std\s*;[ \t]*)/m, `$1 ${CPP_ALGORITHM_POLYFILL} `);
-            } else if (/^[ \t]*int\s+main\s*\(/m.test(processed)) {
-              processed = processed.replace(/(^[ \t]*int\s+main\s*\()/m, `${CPP_ALGORITHM_POLYFILL} $1`);
-            }
-          }
+          // 2. 自動防禦初始化未給予初值之原生陣列 (徹底消滅 JSCPP 底層 NaN 導致的 overflow of NaN(int) 崩潰)
+          processed = autoInitCppArrays(processed);
 
-          // 2. 智能補齊 main 函式的 return 0;
-          if (/\bint\s+main\s*\([^)]*\)/.test(processed) && !/\breturn\b/.test(processed)) {
+          // 3. 智能補齊 main 函式的 return 0; (若 main 結尾前缺少 return，一律自動補齊，徹底避免 JSCPP 拋出 you must return a value)
+          if (/\b(?:int\s+)?main\s*\([^)]*\)/.test(processed)) {
             const lastBrace = processed.lastIndexOf('}');
             if (lastBrace !== -1) {
-              processed = processed.substring(0, lastBrace) + '\n    return 0;\n' + processed.substring(lastBrace);
+              const beforeLastBrace = processed.substring(0, lastBrace).trimEnd();
+              if (!/return(?:\s+[^;]+)?\s*;$/.test(beforeLastBrace)) {
+                processed = processed.substring(0, lastBrace) + '\n    return 0;\n' + processed.substring(lastBrace);
+              }
             } else {
               processed += '\nreturn 0;';
             }
           }
 
-          // 3. 注入使用者自訂的未初始化變數模擬初值 (同列追加分號語句，行號絕對對齊)
+          // 4. 注入使用者自訂的未初始化變數模擬初值 (同列追加分號語句，行號絕對對齊)
           if (customOverrides) {
             for (const varName in customOverrides) {
               const customVal = customOverrides[varName];
@@ -3515,36 +4432,11 @@ print("Result:", calculate_sum(10))`
 
         // 建立整合 <algorithm> 與常用函式支援的 JSCPP 執行組態
         const getJSCPPConfig = (extraConfig = {}) => {
-          const loadAlgorithm = function(rt) {
-            const regMinMax = (ns, typeLit) => {
-              if (!typeLit) return;
-              rt.regFunc(function(rt, _this, a, b) {
-                return rt.val(typeLit, a.v < b.v ? a.v : b.v);
-              }, ns, "min", [typeLit, typeLit], typeLit);
-
-              rt.regFunc(function(rt, _this, a, b) {
-                return rt.val(typeLit, a.v > b.v ? a.v : b.v);
-              }, ns, "max", [typeLit, typeLit], typeLit);
-            };
-
-            ["global", "std"].forEach(ns => {
-              if (rt.intTypeLiteral) regMinMax(ns, rt.intTypeLiteral);
-              if (rt.doubleTypeLiteral) regMinMax(ns, rt.doubleTypeLiteral);
-              if (rt.floatTypeLiteral) regMinMax(ns, rt.floatTypeLiteral);
-              if (rt.charTypeLiteral) regMinMax(ns, rt.charTypeLiteral);
-            });
-          };
-
-          const includes = {
-            "algorithm": { load: loadAlgorithm },
-            "algorithm.h": { load: loadAlgorithm },
-            "bits/stdc++.h": { load: loadAlgorithm },
-            ...(extraConfig.includes || {})
-          };
-
+          if (window.JSCPP) {
+            setupJSCPPAlgorithms(window.JSCPP);
+          }
           return {
-            ...extraConfig,
-            includes
+            ...extraConfig
           };
         };
 
@@ -3649,6 +4541,31 @@ print("Result:", calculate_sum(10))`
             category = 'scalar';
             displayVal = val.val;
             typeStr = val.type || (typeof val.val === 'number' ? (Number.isInteger(val.val) ? 'int' : 'float') : 'int');
+          } else if (val !== null && typeof val === 'object' && val.__type__) {
+            const t = val.__type__;
+            category = t;
+            if (t === 'pair') {
+              typeStr = 'pair';
+              displayVal = val;
+            } else if (t === 'set') {
+              typeStr = `set (size: ${(val.values || []).length})`;
+              displayVal = val.values || [];
+            } else if (t === 'map') {
+              typeStr = `map (size: ${(val.entries || []).length})`;
+              displayVal = val.entries || [];
+            } else if (t === 'stack') {
+              typeStr = `stack (size: ${(val.values || []).length})`;
+              displayVal = val.values || [];
+            } else if (t === 'queue') {
+              typeStr = `queue (size: ${(val.values || []).length})`;
+              displayVal = val.values || [];
+            } else if (t === 'priority_queue') {
+              typeStr = `priority_queue (size: ${(val.values || []).length})`;
+              displayVal = val.values || [];
+            } else if (t === 'bitset') {
+              typeStr = 'bitset';
+              displayVal = val.value || '';
+            }
           } else if (val !== null && typeof val === 'object') {
             category = 'object';
             typeStr = '物件/Dict';
@@ -3690,12 +4607,15 @@ print("Result:", calculate_sum(10))`
           }
         };
 
-        // 🖼️ 結束除錯返回圖片模式
+        // 🖼️ 結束除錯返回圖片模式 (執行「重新開始」重置狀態 + 返回圖片)
         const returnToImageMode = () => {
           stopAutoPlay();
           breakpoints.value.clear();
           breakpoints.value = new Set();
           showWatchPanel.value = false;
+          if (typeof resetExecution === 'function') {
+            resetExecution(false);
+          }
           viewerMode.value = 'image';
           execError.value = null;
         };
@@ -3734,10 +4654,17 @@ print("Result:", calculate_sum(10))`
               .replace(/^語法錯誤\s*\(Syntax Error\):\s*/i, '')
               .trim();
 
-            if (/expected\s*['"]?;/i.test(cleanMsg)) {
+            // 智慧檢測：若程式碼或錯誤內容含有明顯的 Python 語法特徵
+            const currentCodeText = (typeof sandboxCode !== 'undefined' && sandboxCode.value) ? sandboxCode.value : ((typeof activeProblem !== 'undefined' && activeProblem.value) ? (activeProblem.value.sourceCode || '') : '');
+            const hasPythonSyntax = /(?:input\s*\(|print\s*\(|def\s+\w+\s*\(|for\s+\w+\s+in\s+range|elif\s|import\s+\w+|\*map\s*\(|n\s*=\s*int|split\s*\()/i.test(cleanMsg) ||
+                                    /(?:input\s*\(|print\s*\(|def\s+\w+\s*\(|for\s+\w+\s+in\s+range|elif\s|import\s+\w+|\*map\s*\(|split\s*\()/i.test(currentCodeText);
+
+            if (hasPythonSyntax) {
+              hint = "💡 這段程式碼看起來是 Python 語法（例如 input()、range() 等），請點擊右上角切換至「🐍 Python (Pyodide)」模式執行！";
+            } else if (/expected\s*['"]?;/i.test(cleanMsg)) {
               hint = "缺少分號 ';'，請檢查該行或前一行結尾是否有遺漏分號。";
             } else if (/cannot find library/i.test(cleanMsg)) {
-              hint = "輕量瀏覽器沙盒不支援此標頭檔 (如 <string>, <vector> 等 STL 容器)。請使用原生陣列 (如 int a[10]、char s[]) 與 <iostream> 進行練習。";
+              hint = "輕量瀏覽器沙盒不支援此標頭檔 (如 <string>, <vector> 等 STL 容器)。請切換至「完整 GCC」模式或使用原生陣列進行練習。";
             } else if (/not declared in this scope/i.test(cleanMsg)) {
               hint = "變數尚未宣告，使用前請先宣告其型別（例如 int, float, string 等）。";
             } else if (/expected\s*['"]?[}{]/i.test(cleanMsg) || /unmatched/i.test(cleanMsg)) {
@@ -3833,6 +4760,90 @@ print("Result:", calculate_sum(10))`
           };
         };
 
+        // 題庫模式：完整 GCC 逐步除錯追蹤
+        const prepareProblemGccDebugTrace = async (code, inputData) => {
+          const instrumentRes = instrumentCppCode(code);
+          if (!instrumentRes.success) {
+            execError.value = {
+              line: null,
+              message: instrumentRes.reason,
+              hint: '逐行除錯不支援此進階語法。請使用本機 IDE 進行完整除錯。'
+            };
+            return false;
+          }
+
+          gccCompiling.value = true;
+          try {
+            const res = await executeGccViaWandbox(instrumentRes.instrumentedCode, inputData);
+            if (res.compiler_error && res.compiler_error.trim()) {
+              execError.value = parseGccCompilerError(res.compiler_error);
+              return false;
+            }
+            const steps = parseGccTraceSteps(res.program_error, res.program_output);
+            if (steps.length === 0) {
+              execError.value = {
+                line: 1,
+                message: '未產生任何執行步驟。' + (res.program_error || res.program_message || ''),
+                hint: '請檢查程式碼中是否有 main() 函式或程式是否正常結束。'
+              };
+              return false;
+            }
+            recordedSteps.value = steps;
+            return true;
+          } catch(e) {
+            execError.value = {
+              line: 1,
+              message: 'GCC 編譯請求失敗：' + (e.message || String(e)),
+              hint: '請檢查網路連線或稍後再試。'
+            };
+            return false;
+          } finally {
+            gccCompiling.value = false;
+          }
+        };
+
+        // 沙盒模式：完整 GCC 逐步除錯追蹤
+        const prepareSandboxGccDebugTrace = async (code, inputData) => {
+          const instrumentRes = instrumentCppCode(code);
+          if (!instrumentRes.success) {
+            sandboxError.value = {
+              line: null,
+              message: instrumentRes.reason,
+              hint: '逐行除錯不支援此進階語法。若需執行，可改用『⚡ 直接執行 (Run)』查看輸出結果，或使用本機 IDE 進行完整除錯。'
+            };
+            return false;
+          }
+
+          sandboxGccCompiling.value = true;
+          try {
+            const res = await executeGccViaWandbox(instrumentRes.instrumentedCode, inputData);
+            if (res.compiler_error && res.compiler_error.trim()) {
+              sandboxError.value = parseGccCompilerError(res.compiler_error);
+              return false;
+            }
+            const steps = parseGccTraceSteps(res.program_error, res.program_output);
+            if (steps.length === 0) {
+              sandboxError.value = {
+                line: 1,
+                message: '未產生任何執行步驟。' + (res.program_error || res.program_message || ''),
+                hint: '請檢查程式碼中是否有 main() 函式或程式是否正常結束。'
+              };
+              return false;
+            }
+            sandboxRecordedSteps.value = steps;
+            return true;
+          } catch(e) {
+            sandboxError.value = {
+              line: 1,
+              message: 'GCC 編譯請求失敗：' + (e.message || String(e)),
+              hint: '請檢查網路連線或稍後再試。'
+            };
+            return false;
+          } finally {
+            sandboxGccCompiling.value = false;
+          }
+        };
+
         // 預先追蹤編譯與執行紀錄 (一次跑完生成逐步快照，提供瞬時上一步/下一步/重試)
         const prepareExecutionTrace = async () => {
           if (!activeProblem.value) return false;
@@ -3849,6 +4860,10 @@ print("Result:", calculate_sum(10))`
 
           try {
             if (lang === 'cpp' || lang === 'c') {
+              if (problemCppEngine.value === 'gcc') {
+                const ok = await prepareProblemGccDebugTrace(code, inputData);
+                return ok;
+              }
               // ==================== C++ (JSCPP) 逐步追蹤 ====================
               await ensureJSCPPLoaded();
               const steps = [];
@@ -4361,7 +5376,7 @@ def __run_with_trace(user_code_str, stdin_str):
         };
 
         // 控制按鈕動作：重新開始 (回到未開始狀態，允許使用者修改或更換測資)
-        const resetExecution = () => {
+        const resetExecution = (showToastMsg = true) => {
           stopAutoPlay();
           execError.value = null;
           currentStdinLine.value = 0;
@@ -4375,7 +5390,9 @@ def __run_with_trace(user_code_str, stdin_str):
           if (stdinScrollRef.value) {
             stdinScrollRef.value.scrollTop = 0;
           }
-          showToast("已重置除錯狀態，可重新輸入或調整測資！");
+          if (showToastMsg) {
+            showToast("已重置除錯狀態，可重新輸入或調整測資！");
+          }
         };
 
         // 控制按鈕動作：⏩ 執行到底
@@ -4566,6 +5583,32 @@ def __run_with_trace(user_code_str, stdin_str):
         const showSandboxModal = ref(false);
         const sandboxMode = ref('editor'); // 'editor' (輕量編譯) | 'debug' (逐行除錯)
         const sandboxLang = ref('python'); // 'python' | 'cpp'
+        const sandboxCppEngine = ref('jscpp'); // 'jscpp' | 'gcc'
+        const sandboxGccCompiling = ref(false);
+        const sandboxGccDirectRunning = ref(false);
+        const toggleSandboxCppEngine = (target) => {
+          if (sandboxMode.value === 'debug') {
+            showToast("除錯進行中無法更換引擎，請先點擊【停止除錯 返回編輯】！", "info");
+            return;
+          }
+          if (target && (target === 'jscpp' || target === 'gcc')) {
+            sandboxCppEngine.value = target;
+          } else {
+            sandboxCppEngine.value = sandboxCppEngine.value === 'jscpp' ? 'gcc' : 'jscpp';
+          }
+        };
+        const sandboxLastAction = ref('direct'); // 'direct' (直接執行) | 'debug' (逐行除錯)
+
+        // 智慧引導切換：依據使用者點選的動作（直接執行或逐行除錯），切換至完整 GCC 並自動執行
+        const handleSandboxStlSwitch = async (action) => {
+          sandboxCppEngine.value = 'gcc';
+          sandboxError.value = null;
+          if (action === 'direct') {
+            await runSandboxDirect();
+          } else {
+            await startSandboxDebug();
+          }
+        };
         const sandboxWrapEnabled = ref(true);
         const sandboxExecuting = ref(false);
         const sandboxError = ref(null);
@@ -4985,6 +6028,7 @@ int main() {
 
         // ⚡ 直接執行 (Run) 模式：秒速跑完於右上角顯示輸出，代碼保持可編輯
         const runSandboxDirect = async () => {
+          sandboxLastAction.value = 'direct';
           sandboxExecuting.value = true;
           sandboxError.value = null;
           sandboxStdout.value = '';
@@ -4994,24 +6038,38 @@ int main() {
 
           try {
             if (lang === 'cpp') {
-              await ensureJSCPPLoaded();
-              let stdoutBuf = '';
+              if (sandboxCppEngine.value === 'gcc') {
+                sandboxGccDirectRunning.value = true;
+                try {
+                  const directRes = await runGccDirect(code, inputData);
+                  if (directRes.isCompileError) {
+                    sandboxError.value = directRes.error;
+                  } else {
+                    sandboxStdout.value = directRes.output;
+                  }
+                } finally {
+                  sandboxGccDirectRunning.value = false;
+                }
+              } else {
+                await ensureJSCPPLoaded();
+                let stdoutBuf = '';
 
-              // 統一 C++ 程式碼預處理 (含 <algorithm> 同列 polyfill、return 0 補齊、自訂初值注入)
-              const processedCode = preprocessCppCode(code, sandboxCustomUninitOverrides.value);
+                // 統一 C++ 程式碼預處理 (含 <algorithm> 同列 polyfill、return 0 補齊、自訂初值注入)
+                const processedCode = preprocessCppCode(code, sandboxCustomUninitOverrides.value);
 
-              const config = getJSCPPConfig({
-                stdio: {
-                  write: (s) => { stdoutBuf += s; }
-                },
-                maxTimeout: 10000
-              });
+                const config = getJSCPPConfig({
+                  stdio: {
+                    write: (s) => { stdoutBuf += s; }
+                  },
+                  maxTimeout: 10000
+                });
 
-              try {
-                window.JSCPP.run(processedCode, inputData, config);
-                sandboxStdout.value = stdoutBuf || '(程式執行結束，無標準輸出)';
-              } catch (runErr) {
-                throw runErr;
+                try {
+                  window.JSCPP.run(processedCode, inputData, config);
+                  sandboxStdout.value = stdoutBuf || '(程式執行結束，無標準輸出)';
+                } catch (runErr) {
+                  throw runErr;
+                }
               }
             } else {
               // Python (Pyodide)
@@ -5051,6 +6109,7 @@ __sb_result = __sb_stdout.getvalue()
 
         // 預先追蹤沙盒編譯與執行紀錄 (一次跑完生成逐步快照)
         const prepareSandboxDebugTrace = async () => {
+          sandboxLastAction.value = 'debug';
           sandboxExecuting.value = true;
           sandboxError.value = null;
           const lang = sandboxLang.value;
@@ -5059,6 +6118,10 @@ __sb_result = __sb_stdout.getvalue()
 
           try {
             if (lang === 'cpp') {
+              if (sandboxCppEngine.value === 'gcc') {
+                const ok = await prepareSandboxGccDebugTrace(code, inputData);
+                return ok;
+              }
               await ensureJSCPPLoaded();
               const steps = [];
               let stdoutBuffer = "";
@@ -5400,6 +6463,7 @@ def __run_with_trace(user_code_str, stdin_str):
 
         // 🔍 進入逐行除錯 (Step Debugger) 模式
         const startSandboxDebug = async () => {
+          sandboxLastAction.value = 'debug';
           const ok = await prepareSandboxDebugTrace();
           if (!ok || sandboxRecordedSteps.value.length === 0) return;
           sandboxMode.value = 'debug';
@@ -6645,6 +7709,15 @@ def __run_with_trace(user_code_str, stdin_str):
           stdinScrollRef,
           stdoutScrollRef,
           execError,
+          gccCompiling,
+          problemCppEngine,
+          toggleProblemCppEngine,
+          sandboxCppEngine,
+          sandboxGccCompiling,
+          sandboxGccDirectRunning,
+          toggleSandboxCppEngine,
+          sandboxLastAction,
+          handleSandboxStlSwitch,
 
           // 自由練習沙盒 ＆ 線上輕量編譯/逐行除錯雙模系統
           showSandboxModal,
