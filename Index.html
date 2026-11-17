@@ -3457,6 +3457,81 @@ print("Result:", calculate_sum(10))`
           });
         };
 
+        // C++ 演算法常用函式同行零偏移補丁 (維持 100% 行號精確對齊，提供 min, max, swap 跨型別支援)
+        const CPP_ALGORITHM_POLYFILL = 'int min(int a,int b){return a<b?a:b;} int max(int a,int b){return a>b?a:b;} double min(double a,double b){return a<b?a:b;} double max(double a,double b){return a>b?a:b;} void swap(int &a,int &b){int t=a;a=b;b=t;} void swap(double &a,double &b){double t=a;a=b;b=t;}';
+
+        // 統一 C++ 程式碼預處理：注入常用演算法標頭檔補丁、自動補齊 return 0、以及自訂記憶體初值注入
+        const preprocessCppCode = (rawCode, customOverrides = {}) => {
+          let processed = rawCode || '';
+
+          // 1. 若寫了 #include <algorithm> 或 #include <bits/stdc++.h>，將該行替換為同列函式實作 (零行號偏移，避開 missing library)
+          const algoIncludePattern = /^[ \t]*#include\s*[<"](?:algorithm|bits\/stdc\+\+\.h)[>"][ \t]*/m;
+          if (algoIncludePattern.test(processed)) {
+            processed = processed.replace(algoIncludePattern, CPP_ALGORITHM_POLYFILL);
+          } else if (/\b(?:min|max|swap)\s*\(/.test(processed)) {
+            // 若學生未寫 #include <algorithm> 但呼叫了 min / max / swap，自動於 using namespace std; 後方同行追加
+            if (/^[ \t]*using\s+namespace\s+std\s*;[ \t]*/m.test(processed)) {
+              processed = processed.replace(/(^[ \t]*using\s+namespace\s+std\s*;[ \t]*)/m, `$1 ${CPP_ALGORITHM_POLYFILL} `);
+            }
+          }
+
+          // 2. 智能補齊 main 函式的 return 0;
+          if (/\bint\s+main\s*\([^)]*\)/.test(processed) && !/\breturn\b/.test(processed)) {
+            const lastBrace = processed.lastIndexOf('}');
+            if (lastBrace !== -1) {
+              processed = processed.substring(0, lastBrace) + '\n    return 0;\n' + processed.substring(lastBrace);
+            } else {
+              processed += '\nreturn 0;';
+            }
+          }
+
+          // 3. 注入使用者自訂的未初始化變數模擬初值 (同列追加分號語句，行號絕對對齊)
+          if (customOverrides) {
+            for (const varName in customOverrides) {
+              const customVal = customOverrides[varName];
+              const pattern = new RegExp(`(^[ \\t]*(?:int|long|short|float|double|bool|char)\\b[^;\\n]*?\\b${varName}\\b[^;\\n]*;)`, 'm');
+              processed = processed.replace(pattern, `$1 ${varName} = ${customVal};`);
+            }
+          }
+
+          return processed;
+        };
+
+        // 建立整合 <algorithm> 與常用函式支援的 JSCPP 執行組態
+        const getJSCPPConfig = (extraConfig = {}) => {
+          const loadAlgorithm = function(rt) {
+            const regMinMax = (ns, typeLit) => {
+              if (!typeLit) return;
+              rt.regFunc(function(rt, _this, a, b) {
+                return rt.val(typeLit, a.v < b.v ? a.v : b.v);
+              }, ns, "min", [typeLit, typeLit], typeLit);
+
+              rt.regFunc(function(rt, _this, a, b) {
+                return rt.val(typeLit, a.v > b.v ? a.v : b.v);
+              }, ns, "max", [typeLit, typeLit], typeLit);
+            };
+
+            ["global", "std"].forEach(ns => {
+              if (rt.intTypeLiteral) regMinMax(ns, rt.intTypeLiteral);
+              if (rt.doubleTypeLiteral) regMinMax(ns, rt.doubleTypeLiteral);
+              if (rt.floatTypeLiteral) regMinMax(ns, rt.floatTypeLiteral);
+              if (rt.charTypeLiteral) regMinMax(ns, rt.charTypeLiteral);
+            });
+          };
+
+          const includes = {
+            "algorithm": { load: loadAlgorithm },
+            "algorithm.h": { load: loadAlgorithm },
+            "bits/stdc++.h": { load: loadAlgorithm },
+            ...(extraConfig.includes || {})
+          };
+
+          return {
+            ...extraConfig,
+            includes
+          };
+        };
+
         // 檢測某行 C++ 程式碼是否對指定變數進行顯式賦值 (cin、=、+=、++、-- 等)
         const isExplicitlyAssigned = (lineCode, varName) => {
           if (!lineCode || !varName) return false;
@@ -3711,30 +3786,15 @@ print("Result:", calculate_sum(10))`
               const steps = [];
               let stdoutBuffer = "";
 
-              // 智能語法容錯修正：若 int main() 缺少 return 0;，自動在最後閉合括號前補上
-              let processedCode = code;
-              if (/\bint\s+main\s*\([^)]*\)/.test(processedCode) && !/\breturn\b/.test(processedCode)) {
-                const lastBrace = processedCode.lastIndexOf('}');
-                if (lastBrace !== -1) {
-                  processedCode = processedCode.substring(0, lastBrace) + '\n    return 0;\n' + processedCode.substring(lastBrace);
-                } else {
-                  processedCode += '\nreturn 0;';
-                }
-              }
+              // 統一 C++ 程式碼預處理 (含 <algorithm> 同列 polyfill、return 0 補齊、自訂初值注入)
+              const processedCode = preprocessCppCode(code, customUninitOverrides.value);
 
-              // 注入使用者自訂的未初始化變數模擬初值 (題庫模式：同列追加分號語句，絕不增加行數，行號精確對齊)
-              for (const varName in customUninitOverrides.value) {
-                const customVal = customUninitOverrides.value[varName];
-                const pattern = new RegExp(`(^[ \\t]*(?:int|long|short|float|double|bool|char)\\b[^;\\n]*?\\b${varName}\\b[^;\\n]*;)`, 'm');
-                processedCode = processedCode.replace(pattern, `$1 ${varName} = ${customVal};`);
-              }
-
-              const config = {
+              const config = getJSCPPConfig({
                 stdio: {
                   write: (s) => { stdoutBuffer += s; }
                 },
                 debug: true
-              };
+              });
 
               let myDebugger;
               try {
@@ -4431,7 +4491,7 @@ int main() {
 `;
 
         // C++ 標頭檔支援提示訊息 (透過 Vue 資料渲染，避免在 HTML 模板中出現角括號導致解析中斷)
-        const sandboxCppNotice = '⚠️ 支援標頭檔：<iostream>、<cmath>、<cstring>、<cstdlib>（不支援 <vector>、<string> 等 STL 容器，請改用原生陣列）';
+        const sandboxCppNotice = '⚠️ 支援標頭檔：<iostream>、<algorithm> (min, max, swap)、<cmath>、<cstring>、<cstdlib>（不支援 <vector>、<string> 等 STL 容器，請改用原生陣列）';
 
         // 雙語言獨立草稿快取 (localStorage)
         let savedPy = '';
@@ -4823,29 +4883,16 @@ int main() {
             if (lang === 'cpp') {
               await ensureJSCPPLoaded();
               let stdoutBuf = '';
-              let processedCode = code;
-              if (/\bint\s+main\s*\([^)]*\)/.test(processedCode) && !/\breturn\b/.test(processedCode)) {
-                const lastBrace = processedCode.lastIndexOf('}');
-                if (lastBrace !== -1) {
-                  processedCode = processedCode.substring(0, lastBrace) + '\n    return 0;\n' + processedCode.substring(lastBrace);
-                } else {
-                  processedCode += '\nreturn 0;';
-                }
-              }
 
-              // 注入使用者自訂的未初始化變數模擬初值 (沙盒模式：同列追加分號語句，絕不增加行數，行號精確對齊)
-              for (const varName in sandboxCustomUninitOverrides.value) {
-                const customVal = sandboxCustomUninitOverrides.value[varName];
-                const pattern = new RegExp(`(^[ \\t]*(?:int|long|short|float|double|bool|char)\\b[^;\\n]*?\\b${varName}\\b[^;\\n]*;)`, 'm');
-                processedCode = processedCode.replace(pattern, `$1 ${varName} = ${customVal};`);
-              }
+              // 統一 C++ 程式碼預處理 (含 <algorithm> 同列 polyfill、return 0 補齊、自訂初值注入)
+              const processedCode = preprocessCppCode(code, sandboxCustomUninitOverrides.value);
 
-              const config = {
+              const config = getJSCPPConfig({
                 stdio: {
                   write: (s) => { stdoutBuf += s; }
                 },
                 maxTimeout: 10000
-              };
+              });
 
               try {
                 window.JSCPP.run(processedCode, inputData, config);
@@ -4903,30 +4950,15 @@ __sb_result = __sb_stdout.getvalue()
               const steps = [];
               let stdoutBuffer = "";
 
-              let processedCode = code;
-              if (/\bint\s+main\s*\([^)]*\)/.test(processedCode) && !/\breturn\b/.test(processedCode)) {
-                const lastBrace = processedCode.lastIndexOf('}');
-                if (lastBrace !== -1) {
-                  processedCode = processedCode.substring(0, lastBrace) + '\n    return 0;\n' + processedCode.substring(lastBrace);
-                } else {
-                  processedCode += '\nreturn 0;';
-                }
-              }
+              // 統一 C++ 程式碼預處理 (含 <algorithm> 同列 polyfill、return 0 補齊、自訂初值注入)
+              const processedCode = preprocessCppCode(code, sandboxCustomUninitOverrides.value);
 
-              // 注入使用者自訂的未初始化變數模擬初值 (沙盒逐行除錯模式：同列追加分號語句，絕不增加行數，行號精確對齊)
-              for (const varName in sandboxCustomUninitOverrides.value) {
-                const customVal = sandboxCustomUninitOverrides.value[varName];
-                const pattern = new RegExp(`(^[ \\t]*(?:int|long|short|float|double|bool|char)\\b[^;\\n]*?\\b${varName}\\b[^;\\n]*;)`, 'm');
-                processedCode = processedCode.replace(pattern, `$1 ${varName} = ${customVal};`);
-              }
-
-
-              const config = {
+              const config = getJSCPPConfig({
                 stdio: {
                   write: (s) => { stdoutBuffer += s; }
                 },
                 debug: true
-              };
+              });
 
               let myDebugger;
               try {
