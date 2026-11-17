@@ -3552,6 +3552,38 @@ print("Result:", calculate_sum(10))`
           return varNames;
         };
 
+        // 解析 C++ 解譯器輸出的陣列值 (將 "[0, 5, 3, NaN, ...]" 安全反序列化為原生 Array，清理 NaN 殘留)
+        const parseCppArrayValue = (rawV) => {
+          if (Array.isArray(rawV)) {
+            return rawV.map(item => parseCppArrayValue(item));
+          }
+          if (typeof rawV !== 'string') return rawV;
+          const trimmed = rawV.trim();
+          if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+            // 2D 矩陣
+            if (trimmed.startsWith('[[') || trimmed.includes('],[')) {
+              try {
+                const sanitizedJson = trimmed.replace(/\bNaN\b/g, '0').replace(/\bundefined\b/g, '0');
+                return JSON.parse(sanitizedJson);
+              } catch (_) {}
+            }
+
+            // 1D 陣列安全解析
+            const content = trimmed.slice(1, -1);
+            if (!content.trim()) return [];
+            return content.split(',').map(item => {
+              const s = item.trim();
+              if (s === 'NaN' || s === 'undefined' || s === '') return 0;
+              if (/^-?\d+$/.test(s)) return parseInt(s, 10);
+              if (/^-?\d+\.\d+$/.test(s)) return parseFloat(s);
+              if (s === 'true') return true;
+              if (s === 'false') return false;
+              return s;
+            });
+          }
+          return rawV;
+        };
+
         // 檢測某行 C++ 程式碼是否對指定變數進行顯式賦值 (cin、=、+=、++、-- 等)
         const isExplicitlyAssigned = (lineCode, varName) => {
           if (!lineCode || !varName) return false;
@@ -3873,6 +3905,10 @@ print("Result:", calculate_sum(10))`
                       if (cType.includes('function') || cType.includes('(')) return;
                       
                       let rawV = (vObj.value !== undefined) ? vObj.value : vObj.val;
+                      // 若為 C++ 陣列字串 (如 "[0,5,3,NaN...]")，反序列化為真實 Array 並將未初始化之 NaN 轉為 0
+                      if (cType.includes('[') || (typeof rawV === 'string' && rawV.trim().startsWith('[') && rawV.trim().endsWith(']'))) {
+                        rawV = parseCppArrayValue(rawV);
+                      }
                       const isArrayVar = Array.isArray(rawV) || cType.includes('[');
                       
                       // 檢查該變數先前是否已於執行過程中被程式碼主動賦值 (cin、=、++ 等)
@@ -3949,6 +3985,9 @@ print("Result:", calculate_sum(10))`
                         if (queried && (queried.value !== undefined || queried.val !== undefined)) {
                           let qVal = queried.value !== undefined ? queried.value : queried.val;
                           const qType = (queried.type || '').toLowerCase();
+                          if (qType.includes('[') || (typeof qVal === 'string' && qVal.trim().startsWith('[') && qVal.trim().endsWith(']'))) {
+                            qVal = parseCppArrayValue(qVal);
+                          }
                           if (Array.isArray(qVal)) {
                             parsedVars[vName] = qVal.map(item => (typeof item === 'number' && !isNaN(item)) ? item : (parseInt(item, 10) || 0));
                           } else if (['int', 'long', 'short'].some(t => qType.includes(t)) && !qType.includes('[')) {
@@ -5068,6 +5107,10 @@ __sb_result = __sb_stdout.getvalue()
                       if (cType.includes('function') || cType.includes('(')) return;
 
                       let rawV = (vObj.value !== undefined) ? vObj.value : vObj.val;
+                      // 若為 C++ 陣列字串 (如 "[0,5,3,NaN...]")，反序列化為真實 Array 並將未初始化之 NaN 轉為 0
+                      if (cType.includes('[') || (typeof rawV === 'string' && rawV.trim().startsWith('[') && rawV.trim().endsWith(']'))) {
+                        rawV = parseCppArrayValue(rawV);
+                      }
                       const isArrayVar = Array.isArray(rawV) || cType.includes('[');
 
                       let isAssigned = sandboxHasAssignedInCode[vObj.name] || false;
@@ -5138,6 +5181,9 @@ __sb_result = __sb_stdout.getvalue()
                         if (queried && (queried.value !== undefined || queried.val !== undefined)) {
                           let qVal = queried.value !== undefined ? queried.value : queried.val;
                           const qType = (queried.type || '').toLowerCase();
+                          if (qType.includes('[') || (typeof qVal === 'string' && qVal.trim().startsWith('[') && qVal.trim().endsWith(']'))) {
+                            qVal = parseCppArrayValue(qVal);
+                          }
                           if (Array.isArray(qVal)) {
                             parsedVars[vName] = qVal.map(item => (typeof item === 'number' && !isNaN(item)) ? item : (parseInt(item, 10) || 0));
                           } else if (['int', 'long', 'short'].some(t => qType.includes(t)) && !qType.includes('[')) {
