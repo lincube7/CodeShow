@@ -5153,13 +5153,6 @@ __sb_result = __sb_stdout.getvalue()
                       } catch (_) {}
                     }
                   });
-                        } else if (typeof rawV === 'string' && /^-?\d+\.\d+$/.test(rawV.trim())) {
-                          rawV = parseFloat(rawV.trim());
-                        }
-                        parsedVars[key] = rawV;
-                      }
-                    }
-                  }
 
                   steps.push({
                     line: currentLine,
