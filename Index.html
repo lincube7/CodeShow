@@ -3532,6 +3532,26 @@ print("Result:", calculate_sum(10))`
           };
         };
 
+        // C++ 解譯器需過濾之系統物件、全域標識符與內建模組符號
+        const IGNORED_CPP_SYMBOLS = ['cin', 'cout', 'endl', 'cerr', 'clog', 'main', 'min', 'max', 'swap', 'abs'];
+
+        // 從 C++ 程式碼中靜態提取所有變數宣告標識符 (涵蓋 int n, h[105]; 或 for (int i = 0; ...) 中的 i)
+        const extractDeclaredCppVars = (codeStr) => {
+          const varNames = new Set();
+          const declRegex = /\b(?:int|long|short|float|double|bool|char)\s+([^;{\n]+)/g;
+          let dMatch;
+          while ((dMatch = declRegex.exec(codeStr || '')) !== null) {
+            const parts = dMatch[1].split(',');
+            parts.forEach(p => {
+              const vMatch = p.trim().match(/^([a-zA-Z_$][a-zA-Z0-9_$]*)/);
+              if (vMatch && !IGNORED_CPP_SYMBOLS.includes(vMatch[1])) {
+                varNames.add(vMatch[1]);
+              }
+            });
+          }
+          return varNames;
+        };
+
         // 檢測某行 C++ 程式碼是否對指定變數進行顯式賦值 (cin、=、+=、++、-- 等)
         const isExplicitlyAssigned = (lineCode, varName) => {
           if (!lineCode || !varName) return false;
@@ -3809,6 +3829,7 @@ print("Result:", calculate_sum(10))`
               let cppStdinLinesRead = 0;
               const cppInputLinesCount = (inputData || '').trim() ? inputData.split(/\r?\n/).length : 0;
               const cppCodeLines = processedCode.split('\n');
+              const declaredCppVars = extractDeclaredCppVars(processedCode);
               const uninitGarbageMap = {}; // 追蹤本次除錯各未初始化變數之隨機記憶體殘留值
               const hasAssignedInCode = {}; // 追蹤各變數是否已於程式碼執行中被明確賦值
 
@@ -3840,15 +3861,19 @@ print("Result:", calculate_sum(10))`
                   }
 
                   const parsedVars = {};
+                  const IGNORED_CPP_SYMBOLS = ['cin', 'cout', 'endl', 'cerr', 'clog', 'main', 'min', 'max', 'swap', 'abs'];
+
                   // rawVars 為陣列形式 [{name: "y", type: "int", value: "100"}, ...] 或鍵值物件
                   if (Array.isArray(rawVars)) {
                     rawVars.forEach(vObj => {
                       if (!vObj || !vObj.name) return;
-                      // 排除 std 內部物件
-                      if (['cin', 'cout', 'endl', 'cerr', 'clog', 'main'].includes(vObj.name)) return;
+                      // 排除系統物件與演算法函式符號
+                      if (IGNORED_CPP_SYMBOLS.includes(vObj.name)) return;
+                      const cType = (vObj.type || '').toLowerCase();
+                      if (cType.includes('function') || cType.includes('(')) return;
                       
                       let rawV = (vObj.value !== undefined) ? vObj.value : vObj.val;
-                      const cType = (vObj.type || '').toLowerCase();
+                      const isArrayVar = Array.isArray(rawV) || cType.includes('[');
                       
                       // 檢查該變數先前是否已於執行過程中被程式碼主動賦值 (cin、=、++ 等)
                       let isAssigned = hasAssignedInCode[vObj.name] || false;
@@ -3861,7 +3886,7 @@ print("Result:", calculate_sum(10))`
                       }
 
                       const hasOverride = customUninitOverrides.value[vObj.name] !== undefined;
-                      const isUninit = !isAssigned && (hasOverride || rawV === 'NaN' || rawV === undefined || (typeof rawV === 'number' && isNaN(rawV)));
+                      const isUninit = !isArrayVar && !isAssigned && (hasOverride || rawV === 'NaN' || rawV === undefined || (typeof rawV === 'number' && isNaN(rawV)));
 
                       if (isUninit) {
                         if (hasOverride) {
@@ -3874,10 +3899,18 @@ print("Result:", calculate_sum(10))`
                         }
                       } else {
                         delete uninitGarbageMap[vObj.name];
-                        if (['int', 'long', 'short', 'int32', 'int64'].some(t => cType.includes(t))) {
+                        if (Array.isArray(rawV)) {
+                          // 保持陣列結構，絕不能將陣列自身 parseInt
+                          rawV = rawV.map(item => {
+                            if (typeof item === 'number') return isNaN(item) ? 0 : item;
+                            if (typeof item === 'string' && /^-?\d+$/.test(item.trim())) return parseInt(item.trim(), 10);
+                            if (typeof item === 'string' && /^-?\d+\.\d+$/.test(item.trim())) return parseFloat(item.trim());
+                            return item;
+                          });
+                        } else if (['int', 'long', 'short', 'int32', 'int64'].some(t => cType.includes(t)) && !cType.includes('[')) {
                           const parsedNum = parseInt(rawV, 10);
                           rawV = !isNaN(parsedNum) ? parsedNum : 0;
-                        } else if (['float', 'double'].some(t => cType.includes(t))) {
+                        } else if (['float', 'double'].some(t => cType.includes(t)) && !cType.includes('[')) {
                           const parsedNum = parseFloat(rawV);
                           rawV = !isNaN(parsedNum) ? parsedNum : 0.0;
                         } else if (cType.includes('bool')) {
@@ -3889,14 +3922,15 @@ print("Result:", calculate_sum(10))`
                     });
                   } else if (typeof rawVars === 'object') {
                     for (let key in rawVars) {
-                      if (key && !key.startsWith('__') && !['cin', 'cout', 'endl', 'cerr', 'clog', 'main'].includes(key)) {
+                      if (key && !key.startsWith('__') && !IGNORED_CPP_SYMBOLS.includes(key)) {
                         const vObj = rawVars[key];
                         let rawV = (vObj && typeof vObj === 'object') 
                           ? ((vObj.value !== undefined) ? vObj.value : (vObj.val !== undefined ? vObj.val : vObj))
                           : vObj;
                         
-                        // 若為數字字串且能被完全解析成數字，轉為 number
-                        if (typeof rawV === 'string' && /^-?\d+$/.test(rawV.trim())) {
+                        if (Array.isArray(rawV)) {
+                          // 保持陣列
+                        } else if (typeof rawV === 'string' && /^-?\d+$/.test(rawV.trim())) {
                           rawV = parseInt(rawV.trim(), 10);
                         } else if (typeof rawV === 'string' && /^-?\d+\.\d+$/.test(rawV.trim())) {
                           rawV = parseFloat(rawV.trim());
@@ -3906,6 +3940,30 @@ print("Result:", calculate_sum(10))`
                       }
                     }
                   }
+
+                  // 跨 Scope 主動捕獲宣告變數 (確保 for 迴圈宣告之 i, j 等不因 block scope 而遺失)
+                  declaredCppVars.forEach(vName => {
+                    if (parsedVars[vName] === undefined && typeof myDebugger.variable === 'function') {
+                      try {
+                        const queried = myDebugger.variable(vName);
+                        if (queried && (queried.value !== undefined || queried.val !== undefined)) {
+                          let qVal = queried.value !== undefined ? queried.value : queried.val;
+                          const qType = (queried.type || '').toLowerCase();
+                          if (Array.isArray(qVal)) {
+                            parsedVars[vName] = qVal.map(item => (typeof item === 'number' && !isNaN(item)) ? item : (parseInt(item, 10) || 0));
+                          } else if (['int', 'long', 'short'].some(t => qType.includes(t)) && !qType.includes('[')) {
+                            parsedVars[vName] = (parseInt(qVal, 10) || 0);
+                          } else if (['float', 'double'].some(t => qType.includes(t)) && !qType.includes('[')) {
+                            parsedVars[vName] = (parseFloat(qVal) || 0.0);
+                          } else if (qType.includes('bool')) {
+                            parsedVars[vName] = qVal === true || qVal === 1 || qVal === '1' || qVal === 'true';
+                          } else {
+                            parsedVars[vName] = qVal;
+                          }
+                        }
+                      } catch (_) {}
+                    }
+                  });
 
                   steps.push({
                     line: currentLine,
@@ -4973,6 +5031,7 @@ __sb_result = __sb_stdout.getvalue()
               let cppStdinLinesRead = 0;
               const cppInputLinesCount = inputData.trim() ? inputData.split(/\r?\n/).length : 0;
               const cppCodeLines = processedCode.split('\n');
+              const declaredCppVars = extractDeclaredCppVars(processedCode);
               const sandboxUninitGarbageMap = {}; // 追蹤本次除錯各未初始化變數之隨機記憶體殘留值
               const sandboxHasAssignedInCode = {}; // 追蹤各變數是否已於程式碼執行中被明確賦值
 
@@ -5003,9 +5062,14 @@ __sb_result = __sb_stdout.getvalue()
                   if (Array.isArray(rawVars)) {
                     rawVars.forEach(vObj => {
                       if (!vObj || !vObj.name) return;
-                      if (['cin', 'cout', 'endl', 'cerr', 'clog', 'main'].includes(vObj.name)) return;
-                      let rawV = (vObj.value !== undefined) ? vObj.value : vObj.val;
+                      // 排除系統物件與演算法函式符號
+                      if (IGNORED_CPP_SYMBOLS.includes(vObj.name)) return;
                       const cType = (vObj.type || '').toLowerCase();
+                      if (cType.includes('function') || cType.includes('(')) return;
+
+                      let rawV = (vObj.value !== undefined) ? vObj.value : vObj.val;
+                      const isArrayVar = Array.isArray(rawV) || cType.includes('[');
+
                       let isAssigned = sandboxHasAssignedInCode[vObj.name] || false;
                       if (!isAssigned && lastLine !== null) {
                         const prevCode = cppCodeLines[lastLine - 1] || '';
@@ -5016,7 +5080,7 @@ __sb_result = __sb_stdout.getvalue()
                       }
 
                       const hasOverride = sandboxCustomUninitOverrides.value[vObj.name] !== undefined;
-                      const isUninit = !isAssigned && (hasOverride || rawV === 'NaN' || rawV === undefined || (typeof rawV === 'number' && isNaN(rawV)));
+                      const isUninit = !isArrayVar && !isAssigned && (hasOverride || rawV === 'NaN' || rawV === undefined || (typeof rawV === 'number' && isNaN(rawV)));
 
                       if (isUninit) {
                         if (hasOverride) {
@@ -5029,9 +5093,17 @@ __sb_result = __sb_stdout.getvalue()
                         }
                       } else {
                         delete sandboxUninitGarbageMap[vObj.name];
-                        if (['int', 'long', 'short', 'int32', 'int64'].some(t => cType.includes(t))) {
+                        if (Array.isArray(rawV)) {
+                          // 保持陣列結構，絕不能將陣列自身 parseInt
+                          rawV = rawV.map(item => {
+                            if (typeof item === 'number') return isNaN(item) ? 0 : item;
+                            if (typeof item === 'string' && /^-?\d+$/.test(item.trim())) return parseInt(item.trim(), 10);
+                            if (typeof item === 'string' && /^-?\d+\.\d+$/.test(item.trim())) return parseFloat(item.trim());
+                            return item;
+                          });
+                        } else if (['int', 'long', 'short', 'int32', 'int64'].some(t => cType.includes(t)) && !cType.includes('[')) {
                           rawV = (parseInt(rawV, 10) || 0);
-                        } else if (['float', 'double'].some(t => cType.includes(t))) {
+                        } else if (['float', 'double'].some(t => cType.includes(t)) && !cType.includes('[')) {
                           rawV = (parseFloat(rawV) || 0.0);
                         } else if (cType.includes('bool')) {
                           rawV = rawV === true || rawV === 1 || rawV === '1' || rawV === 'true';
@@ -5041,13 +5113,46 @@ __sb_result = __sb_stdout.getvalue()
                     });
                   } else if (typeof rawVars === 'object') {
                     for (let key in rawVars) {
-                      if (key && !key.startsWith('__') && !['cin', 'cout', 'endl', 'cerr', 'clog', 'main'].includes(key)) {
+                      if (key && !key.startsWith('__') && !IGNORED_CPP_SYMBOLS.includes(key)) {
                         const vObj = rawVars[key];
                         let rawV = (vObj && typeof vObj === 'object') 
                           ? ((vObj.value !== undefined) ? vObj.value : (vObj.val !== undefined ? vObj.val : vObj))
                           : vObj;
-                        if (typeof rawV === 'string' && /^-?\d+$/.test(rawV.trim())) {
+                        if (Array.isArray(rawV)) {
+                          // 保持陣列
+                        } else if (typeof rawV === 'string' && /^-?\d+$/.test(rawV.trim())) {
                           rawV = parseInt(rawV.trim(), 10);
+                        } else if (typeof rawV === 'string' && /^-?\d+\.\d+$/.test(rawV.trim())) {
+                          rawV = parseFloat(rawV.trim());
+                        }
+                        parsedVars[key] = rawV;
+                      }
+                    }
+                  }
+
+                  // 跨 Scope 主動捕獲宣告變數 (確保 for 迴圈宣告之 i, j 等不因 block scope 而遺失)
+                  declaredCppVars.forEach(vName => {
+                    if (parsedVars[vName] === undefined && typeof myDebugger.variable === 'function') {
+                      try {
+                        const queried = myDebugger.variable(vName);
+                        if (queried && (queried.value !== undefined || queried.val !== undefined)) {
+                          let qVal = queried.value !== undefined ? queried.value : queried.val;
+                          const qType = (queried.type || '').toLowerCase();
+                          if (Array.isArray(qVal)) {
+                            parsedVars[vName] = qVal.map(item => (typeof item === 'number' && !isNaN(item)) ? item : (parseInt(item, 10) || 0));
+                          } else if (['int', 'long', 'short'].some(t => qType.includes(t)) && !qType.includes('[')) {
+                            parsedVars[vName] = (parseInt(qVal, 10) || 0);
+                          } else if (['float', 'double'].some(t => qType.includes(t)) && !qType.includes('[')) {
+                            parsedVars[vName] = (parseFloat(qVal) || 0.0);
+                          } else if (qType.includes('bool')) {
+                            parsedVars[vName] = qVal === true || qVal === 1 || qVal === '1' || qVal === 'true';
+                          } else {
+                            parsedVars[vName] = qVal;
+                          }
+                        }
+                      } catch (_) {}
+                    }
+                  });
                         } else if (typeof rawV === 'string' && /^-?\d+\.\d+$/.test(rawV.trim())) {
                           rawV = parseFloat(rawV.trim());
                         }
