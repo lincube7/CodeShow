@@ -3464,14 +3464,30 @@ print("Result:", calculate_sum(10))`
         const preprocessCppCode = (rawCode, customOverrides = {}) => {
           let processed = rawCode || '';
 
-          // 1. 若寫了 #include <algorithm> 或 #include <bits/stdc++.h>，將該行替換為同列函式實作 (零行號偏移，避開 missing library)
-          const algoIncludePattern = /^[ \t]*#include\s*[<"](?:algorithm|bits\/stdc\+\+\.h)[>"][ \t]*/m;
-          if (algoIncludePattern.test(processed)) {
-            processed = processed.replace(algoIncludePattern, CPP_ALGORITHM_POLYFILL);
+          // 1. 處理萬用標頭檔 <bits/stdc++.h> 與 <algorithm>
+          let hasIostream = /^[ \t]*#include\s*[<"]iostream[>"]/m.test(processed);
+
+          // 處理 bits/stdc++.h：若無 iostream，優先替換為 <iostream> 以保障 cin/cout 正常存在
+          const bitsPattern = /^[ \t]*#include\s*[<"]bits\/stdc\+\+\.h[>"][ \t]*/m;
+          if (bitsPattern.test(processed)) {
+            if (!hasIostream) {
+              processed = processed.replace(bitsPattern, '#include <iostream>');
+              hasIostream = true;
+            } else {
+              processed = processed.replace(bitsPattern, CPP_ALGORITHM_POLYFILL);
+            }
+          }
+
+          // 處理 algorithm 標頭檔
+          const algoPattern = /^[ \t]*#include\s*[<"]algorithm[>"][ \t]*/m;
+          if (algoPattern.test(processed)) {
+            processed = processed.replace(algoPattern, CPP_ALGORITHM_POLYFILL);
           } else if (/\b(?:min|max)\s*\(/.test(processed)) {
-            // 若學生未寫 #include <algorithm> 但呼叫了 min / max，自動於 using namespace std; 後方同行追加
+            // 若未明確 include algorithm 但呼叫了 min / max，優先於 using namespace std; 後方同行追加
             if (/^[ \t]*using\s+namespace\s+std\s*;[ \t]*/m.test(processed)) {
               processed = processed.replace(/(^[ \t]*using\s+namespace\s+std\s*;[ \t]*)/m, `$1 ${CPP_ALGORITHM_POLYFILL} `);
+            } else if (/^[ \t]*int\s+main\s*\(/m.test(processed)) {
+              processed = processed.replace(/(^[ \t]*int\s+main\s*\()/m, `${CPP_ALGORITHM_POLYFILL} $1`);
             }
           }
 
@@ -4588,7 +4604,7 @@ int main() {
 `;
 
         // C++ 標頭檔支援提示訊息 (透過 Vue 資料渲染，避免在 HTML 模板中出現角括號導致解析中斷)
-        const sandboxCppNotice = '⚠️ 支援標頭檔：<iostream>、<algorithm> (min, max)、<cmath>、<cstring>、<cstdlib>（不支援 <vector>、<string> 等 STL 容器，請改用原生陣列）';
+        const sandboxCppNotice = '⚠️ 支援標頭檔：<iostream>、<algorithm> (min, max)、<bits/stdc++.h>、<cmath>、<cstring>、<cstdlib>（不支援 <vector>、<string> 等 STL 容器，請改用原生陣列）';
 
         // 雙語言獨立草稿快取 (localStorage)
         let savedPy = '';
