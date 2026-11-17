@@ -2625,11 +2625,17 @@
           </div>
           <div class="flex items-center gap-1.5 text-xs pt-0.5 border-t border-slate-800/60">
             <span class="text-slate-500 select-none">➜</span>
-            <span
+            <div
               v-if="w.ok"
-              class="font-bold text-emerald-400 break-all">
-              {{ w.value }}
-            </span>
+              class="font-bold text-emerald-400 break-all flex items-center flex-wrap gap-1.5">
+              <span>{{ w.value }}</span>
+              <span
+                v-if="w.note"
+                class="text-[10px] font-mono font-normal text-amber-300 bg-amber-950/60 border border-amber-500/40 px-1.5 py-0.5 rounded shadow-sm"
+                :title="w.note">
+                ⚠️ {{ w.note }}
+              </span>
+            </div>
             <span
               v-else
               class="text-amber-400/90 text-[11px] truncate"
@@ -5673,11 +5679,72 @@ def __run_with_trace(user_code_str, stdin_str):
           return {};
         };
 
-        // 動態即時計算監看式清單數值
+        // 語言感知陣列代理包裝：支援 Python 負數索引 (如 h[-1]) 與越界偵測，以及 C++ 越界保護
+        const wrapLanguageArray = (target, isCpp, notesCollector, parentPath = '') => {
+          if (!target || typeof target !== 'object') return target;
+          if (!Array.isArray(target)) return target;
+
+          return new Proxy(target, {
+            get(arr, prop, receiver) {
+              if (typeof prop === 'symbol') {
+                return Reflect.get(arr, prop, receiver);
+              }
+
+              // 檢查是否為整數索引存取 (包含負整數如 "-1")
+              if (typeof prop === 'string' && /^-?\d+$/.test(prop)) {
+                const idx = parseInt(prop, 10);
+                const len = arr.length;
+                const nameLabel = parentPath || 'arr';
+
+                if (isCpp) {
+                  // C++ 模式：任何越界皆視為非法記憶體存取
+                  if (idx < 0 || idx >= len) {
+                    throw new Error(`C++ 陣列越界: ${nameLabel}[${idx}] 超出合法範圍 0 ~ ${Math.max(0, len - 1)} (長度 ${len})`);
+                  }
+                  const item = arr[idx];
+                  return wrapLanguageArray(item, isCpp, notesCollector, `${nameLabel}[${idx}]`);
+                } else {
+                  // Python 模式：支援負數索引 (-1 代表最後一個元素，-len 代表第一個元素)
+                  if (idx < 0) {
+                    const actualIdx = len + idx;
+                    if (actualIdx < 0 || actualIdx >= len) {
+                      throw new Error(`IndexError: list index out of range (${nameLabel}[${idx}]，長度 ${len})`);
+                    }
+                    if (notesCollector) {
+                      notesCollector.push(`負數索引 ${nameLabel}[${idx}] ➜ 取得末尾元素 ${nameLabel}[${actualIdx}]`);
+                    }
+                    const item = arr[actualIdx];
+                    return wrapLanguageArray(item, isCpp, notesCollector, `${nameLabel}[${actualIdx}]`);
+                  } else {
+                    // 正數索引
+                    if (idx >= len) {
+                      throw new Error(`IndexError: list index out of range (${nameLabel}[${idx}]，長度 ${len})`);
+                    }
+                    const item = arr[idx];
+                    return wrapLanguageArray(item, isCpp, notesCollector, `${nameLabel}[${idx}]`);
+                  }
+                }
+              }
+
+              const val = Reflect.get(arr, prop, receiver);
+              if (typeof val === 'function') {
+                return val.bind(arr);
+              }
+              return val;
+            }
+          });
+        };
+
+        // 動態即時計算監看式清單數值 (具備 Python / C++ 語言感知與陣列代理)
         const evaluatedWatchList = computed(() => {
           const scope = getCurrentWatchScope();
           const validKeys = Object.keys(scope).filter(k => /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(k));
-          const validVals = validKeys.map(k => scope[k]);
+
+          // 判斷當前除錯環境語言 (Python vs C++)
+          const currentLang = (showSandboxModal.value 
+            ? (sandboxLang.value || 'python') 
+            : ((activeProblem.value && activeProblem.value.language) || 'python')).toLowerCase();
+          const isCpp = currentLang === 'cpp' || currentLang === 'c';
 
           const preamble = 'var abs=Math.abs, min=Math.min, max=Math.max, sqrt=Math.sqrt, pow=Math.pow, floor=Math.floor, ceil=Math.ceil, round=Math.round; ' +
                            'var len = function(x) { return (x && x.length !== undefined) ? x.length : 0; }; ' +
@@ -5687,20 +5754,42 @@ def __run_with_trace(user_code_str, stdin_str):
             const raw = (w.expr || '').trim();
             if (!raw) return { id: w.id, expr: raw, ok: false, error: '運算式為空' };
 
+            const notesCollector = [];
+            const proxiedScopeVals = validKeys.map(k => wrapLanguageArray(scope[k], isCpp, notesCollector, k));
+
             const sanitized = sanitizeWatchExpr(raw);
             try {
               const fn = new Function(...validKeys, 'Math', preamble + 'return (' + sanitized + ');');
-              const res = fn(...validVals, Math);
+              const res = fn(...proxiedScopeVals, Math);
+
+              const uniqueNotes = Array.from(new Set(notesCollector));
+              const noteText = uniqueNotes.length > 0 ? uniqueNotes.join('；') : null;
 
               if (res === undefined) {
-                return { id: w.id, expr: raw, ok: true, value: 'undefined' };
+                return { id: w.id, expr: raw, ok: true, value: isCpp ? 'undefined' : 'None', note: noteText };
+              }
+              if (res === null) {
+                return { id: w.id, expr: raw, ok: true, value: isCpp ? 'nullptr' : 'None', note: noteText };
+              }
+              if (typeof res === 'boolean') {
+                return { id: w.id, expr: raw, ok: true, value: isCpp ? (res ? 'true' : 'false') : (res ? 'True' : 'False'), note: noteText };
               }
               if (typeof res === 'object') {
-                return { id: w.id, expr: raw, ok: true, value: JSON.stringify(res) };
+                return { id: w.id, expr: raw, ok: true, value: JSON.stringify(res), note: noteText };
               }
-              return { id: w.id, expr: raw, ok: true, value: String(res) };
+              return { id: w.id, expr: raw, ok: true, value: String(res), note: noteText };
             } catch (err) {
-              return { id: w.id, expr: raw, ok: false, error: err.message };
+              let errMsg = err.message || String(err);
+              if (errMsg.includes('is not defined')) {
+                const varMatch = errMsg.match(/([a-zA-Z0-9_$]+) is not defined/);
+                const varName = varMatch ? varMatch[1] : '';
+                if (isCpp) {
+                  errMsg = `未宣告的識別字 '${varName || '變數'}'`;
+                } else {
+                  errMsg = `NameError: name '${varName || '變數'}' is not defined`;
+                }
+              }
+              return { id: w.id, expr: raw, ok: false, error: errMsg };
             }
           });
         });
