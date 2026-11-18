@@ -7247,11 +7247,21 @@ def __run_with_trace(user_code_str, stdin_str):
         const updateHighlight = () => {
           nextTick(() => {
             if (previewCode.value && window.Prism) {
+              // ★ 關鍵修復：先用 \uFFFD 佔位符替換 @@...@@ 再餵給 Prism
+              //   \uFFFD 不是任何程式語言的合法 token，Prism 不會拆分它
+              //   這樣無論 Python(@裝飾器) 或 C++(^位元運算) 都安全
+              const rawCode = form.value.code || '';
+              const hasMarks = rawCode.includes('@@');
+              if (hasMarks) {
+                // 以 \uFFFD 包圍標記區域後放入 textContent，讓 Prism 看到乾淨的佔位符
+                const markedCode = rawCode.replace(/@@([\s\S]*?)@@/g, '\uFFFD$1\uFFFD');
+                previewCode.value.textContent = markedCode;
+              }
               Prism.highlightElement(previewCode.value);
-              // 將 @@重點語法@@ 轉換為琥珀金螢光標記 (無虛線邊框，柔和清晰)
-              if (previewCode.value.innerHTML && previewCode.value.innerHTML.includes('@@')) {
+              // Prism 輸出後，把 \uFFFD...\uFFFD 換回 <mark>
+              if (hasMarks && previewCode.value.innerHTML.includes('\uFFFD')) {
                 previewCode.value.innerHTML = previewCode.value.innerHTML.replace(
-                  /@@([\s\S]*?)@@/g,
+                  /\uFFFD([\s\S]*?)\uFFFD/g,
                   '<mark class="code-hl-token">$1</mark>'
                 );
               }
@@ -7333,41 +7343,77 @@ def __run_with_trace(user_code_str, stdin_str):
             //   直接測量即可；若真的找不到才才備援重新注入。
             await new Promise(r => requestAnimationFrame(r)); // 確保 layout committed
 
-            const targetRect = targetEl.getBoundingClientRect();
-            const measureMarks = () => {
-              const positions = [];
-              targetEl.querySelectorAll('.code-hl-token').forEach(mark => {
-                const r = mark.getBoundingClientRect();
-                if (r.width > 0 && r.height > 0) {
-                  positions.push({
-                    top:    r.top    - targetRect.top,
-                    left:   r.left   - targetRect.left,
-                    width:  r.width,
-                    height: r.height
-                  });
+            // ★ 關鍵改進：改用 overlay div 方法替代 Canvas 2D API
+            //   html2canvas 能可靠渲染絕對定位的 div，
+            //   但對 inline element 背景色計算有偏移 bug。
+
+            // 測量 mark 位置（相對於 codeWrapper，因為 overlay 要插進去）
+            const codeWrapper = targetEl.querySelector('.code-pad-left');
+            const wrapperRect = codeWrapper
+              ? codeWrapper.getBoundingClientRect()
+              : targetEl.getBoundingClientRect();
+
+            const hlPositions = [];
+            targetEl.querySelectorAll('.code-hl-token').forEach(mark => {
+              const r = mark.getBoundingClientRect();
+              if (r.width > 0 && r.height > 0) {
+                hlPositions.push({
+                  top:    r.top    - wrapperRect.top,
+                  left:   r.left   - wrapperRect.left,
+                  width:  r.width,
+                  height: r.height
+                });
+              }
+            });
+
+            // 備援：若 marks 消失（\uFFFD 未被正確替換），重新執行一次 updateHighlight 後再測量
+            if (hlPositions.length === 0 && form.value.code.includes('@@')) {
+              // 直接呼叫已修正的 updateHighlight（使用 \uFFFD 佔位符，不怕 Prism 拆分）
+              if (previewCode.value && window.Prism) {
+                const rawCode = form.value.code || '';
+                const markedCode = rawCode.replace(/@@([\s\S]*?)@@/g, '\uFFFD$1\uFFFD');
+                previewCode.value.textContent = markedCode;
+                Prism.highlightElement(previewCode.value);
+                if (previewCode.value.innerHTML.includes('\uFFFD')) {
+                  previewCode.value.innerHTML = previewCode.value.innerHTML.replace(
+                    /\uFFFD([\s\S]*?)\uFFFD/g,
+                    '<mark class="code-hl-token">$1</mark>'
+                  );
                 }
-              });
-              return positions;
-            };
-
-            let hlPositions = measureMarks();
-
-            // 備援：若 marks 因某原因消失，重新注入一次（不呼叫 Prism.highlightElement
-            // 以免拆散 @@ 語法；僅對現有 innerHTML 做正規替換）
-            if (hlPositions.length === 0 && previewCode.value && form.value.code.includes('@@')) {
-              const raw = form.value.code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-              if (previewCode.value.textContent.includes('@@')) {
-                // innerHTML 為純文字 → 直接替換後測量
-                previewCode.value.innerHTML = raw.replace(
-                  /@@([\s\S]*?)@@/g,
-                  '<mark class="code-hl-token">$1</mark>'
-                );
                 await new Promise(r => requestAnimationFrame(r));
-                hlPositions = measureMarks();
+                // 重新測量
+                targetEl.querySelectorAll('.code-hl-token').forEach(mark => {
+                  const r = mark.getBoundingClientRect();
+                  if (r.width > 0 && r.height > 0) {
+                    hlPositions.push({
+                      top:    r.top    - wrapperRect.top,
+                      left:   r.left   - wrapperRect.left,
+                      width:  r.width,
+                      height: r.height
+                    });
+                  }
+                });
               }
             }
 
-            // 使用 html2canvas 將 DOM 轉為 2 倍高清 Canvas
+            // 在 codeWrapper 中注入 overlay div（在 html2canvas 之前！）
+            const overlayDivs = [];
+            if (codeWrapper && hlPositions.length > 0) {
+              hlPositions.forEach(pos => {
+                const div = document.createElement('div');
+                div.style.cssText =
+                  'position:absolute;pointer-events:none;z-index:12;' +
+                  'background:rgba(251,191,36,0.55);border-radius:3px;' +
+                  'top:'    + (pos.top    - 2) + 'px;' +
+                  'left:'   + (pos.left   - 5) + 'px;' +
+                  'width:'  + (pos.width  + 10) + 'px;' +
+                  'height:' + (pos.height + 4) + 'px;';
+                codeWrapper.appendChild(div);
+                overlayDivs.push(div);
+              });
+            }
+
+            // 使用 html2canvas 將 DOM 轉為 2 倍高清 Canvas（overlay div 已在 DOM 內）
             const rawCanvas = await html2canvas(targetEl, {
               scale: 2,
               useCORS: true,
@@ -7380,14 +7426,12 @@ def __run_with_trace(user_code_str, stdin_str):
                 clonedDoc.querySelectorAll('.ocr-text-warp').forEach(el => {
                   el.style.transform = 'none';
                 });
-                // 2. 移除 mark 背景色（高亮框由 Canvas 2D API 負責，位置更精準）
+                // 2. 移除 <mark> 背景色（高亮框已由 overlay div 負責）
                 clonedDoc.querySelectorAll('.code-hl-token').forEach(el => {
                   el.style.setProperty('background', 'none', 'important');
                   el.style.setProperty('box-shadow', 'none', 'important');
                 });
-                // 3. ★ 行號修復：html2canvas 不支援 CSS counter()，
-                //    .line-numbers-rows > span::before { content: counter(linenumber) } 無效。
-                //    在 clone 中把每個 span 換成明確的數字文字節點。
+                // 3. ★ 行號修復：html2canvas 不支援 CSS counter()
                 clonedDoc.querySelectorAll('.line-numbers-rows > span').forEach((span, i) => {
                   span.style.cssText =
                     'display:block;text-align:right;padding-right:0.6em;' +
@@ -7397,34 +7441,8 @@ def __run_with_trace(user_code_str, stdin_str):
               }
             });
 
-            // ★ 關鍵步驟：html2canvas 渲染完畢後，直接把高亮框畫到 Canvas 上
-            //   scale:2 → 所有 CSS px 乘以 2 才是 canvas 座標
-            if (hlPositions.length > 0) {
-              const ctx = rawCanvas.getContext('2d');
-              const sc = 2;
-              ctx.save();
-              ctx.fillStyle = 'rgba(251, 191, 36, 0.55)';
-              hlPositions.forEach(pos => {
-                const x = Math.round((pos.left   - 3) * sc);
-                const y = Math.round((pos.top    - 2) * sc);
-                const w = Math.round((pos.width  + 6) * sc);
-                const h = Math.round((pos.height + 4) * sc);
-                const rr = 3 * sc;  // border-radius: 3px
-                ctx.beginPath();
-                ctx.moveTo(x + rr, y);
-                ctx.lineTo(x + w - rr, y);
-                ctx.quadraticCurveTo(x + w, y,     x + w, y + rr);
-                ctx.lineTo(x + w, y + h - rr);
-                ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
-                ctx.lineTo(x + rr, y + h);
-                ctx.quadraticCurveTo(x,     y + h, x, y + h - rr);
-                ctx.lineTo(x, y + rr);
-                ctx.quadraticCurveTo(x, y,         x + rr, y);
-                ctx.closePath();
-                ctx.fill();
-              });
-              ctx.restore();
-            }
+            // 移除真實 DOM 中的 overlay div（不影響頁面顯示）
+            overlayDivs.forEach(div => div.remove());
 
             // 智能壓縮與縮放最佳化
             const base64Data = compressCanvas(rawCanvas, 1350, 0.88);
