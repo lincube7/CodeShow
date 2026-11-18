@@ -7406,11 +7406,12 @@ def __run_with_trace(user_code_str, stdin_str):
                   el.classList.remove('ocr-text-warp');
                 });
 
-                // --- 2. 替換 mark 為純 span，防止 html2canvas 畫出偏位的內建背景 ---
+                // --- 2. 保留 mark 幾何排版 (padding & margin)，僅隱藏其偏位背景 ---
                 clonedDoc.querySelectorAll('.code-hl-token').forEach(mark => {
-                  const span = clonedDoc.createElement('span');
-                  span.innerHTML = mark.innerHTML;
-                  mark.parentNode.replaceChild(span, mark);
+                  mark.style.setProperty('background', 'transparent', 'important');
+                  mark.style.setProperty('background-color', 'transparent', 'important');
+                  mark.style.setProperty('box-shadow', 'none', 'important');
+                  mark.style.setProperty('border', 'none', 'important');
                 });
 
                 // --- 3. 解除 overflow:hidden 裁切（讓行號可見）---
@@ -7459,9 +7460,9 @@ def __run_with_trace(user_code_str, stdin_str):
             if (hlBoxes.length > 0) {
               fCtx.fillStyle = 'rgba(251, 191, 36, 0.55)';
               hlBoxes.forEach(b => {
-                const x = (b.left - 2) * canvasScale;
+                const x = b.left * canvasScale;
                 const y = (b.top + 8.5) * canvasScale;
-                const w = (b.width + 4) * canvasScale;
+                const w = b.width * canvasScale;
                 const h = b.height * canvasScale;
                 const r = 3 * canvasScale;
                 if (fCtx.roundRect) {
