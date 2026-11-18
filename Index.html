@@ -7311,6 +7311,24 @@ def __run_with_trace(user_code_str, stdin_str):
             }
 
             const targetEl = document.getElementById("carbon-target");
+
+            // ★ 核心修復：在真實 DOM 預先測量每個螢光框的精確像素位置，
+            //   繞過 html2canvas inline-element background 計算的 bug。
+            //   html2canvas 在渲染 Prism line-numbers 環境時，計算 <mark> Y 座標
+            //   會多算一個錯誤偏移，導致背景色塊上移。解法：完全不讓 html2canvas
+            //   渲染任何 mark 背景，改由我們自行在 onclone 注入精準定位的 <div>。
+            const targetRect = targetEl.getBoundingClientRect();
+            const hlPositions = [];
+            targetEl.querySelectorAll('.code-hl-token').forEach(mark => {
+              const r = mark.getBoundingClientRect();
+              hlPositions.push({
+                top:    r.top    - targetRect.top,
+                left:   r.left   - targetRect.left,
+                width:  r.width,
+                height: r.height
+              });
+            });
+
             // 使用 html2canvas 將 DOM 轉為 2 倍高清 Canvas
             const rawCanvas = await html2canvas(targetEl, {
               scale: 2,
@@ -7320,23 +7338,46 @@ def __run_with_trace(user_code_str, stdin_str):
               scrollY: 0,
               logging: false,
               onclone: (clonedDoc) => {
-                // 1. 移除 ocr-text-warp transform（防止 html2canvas 座標矩陣偏移）
+                // 1. 移除 ocr-text-warp transform
                 clonedDoc.querySelectorAll('.ocr-text-warp').forEach(el => {
                   el.style.transform = 'none';
                 });
-                // 2. 移除 Prism line-numbers plugin（它會注入 padding-left + 絕對定位 span，
-                //    導致 html2canvas 計算 mark 元素 Y 座標時多算了 padding，造成螢光框上移）
+                // 2. 移除 line-numbers plugin 注入的 padding 和 span
                 clonedDoc.querySelectorAll('pre.line-numbers').forEach(pre => {
                   pre.classList.remove('line-numbers');
                   pre.querySelectorAll('.line-numbers-rows').forEach(r => r.remove());
-                  pre.style.paddingLeft = '';  // 重設 Prism 注入的 padding-left: 3.8em
+                  pre.style.paddingLeft = '';
                 });
-                // 3. 強制 mark 元素用最簡單的 inline 渲染，防止殘留 inline-flex 造成偏移
+                // 3. 把所有 mark 元素的背景色全部移除（改由精準 div 負責）
                 clonedDoc.querySelectorAll('.code-hl-token').forEach(el => {
+                  el.style.setProperty('background', 'none', 'important');
                   el.style.setProperty('display', 'inline', 'important');
-                  el.style.setProperty('vertical-align', 'baseline', 'important');
-                  el.style.setProperty('line-height', 'inherit', 'important');
+                  el.style.removeProperty('font-weight');
                 });
+                // 4. 在 carbon-target 內注入絕對定位的高亮 div，座標來自真實 DOM 測量
+                if (hlPositions.length > 0) {
+                  const clonedTarget = clonedDoc.getElementById('carbon-target');
+                  if (clonedTarget) {
+                    // 確保 carbon-target 是相對定位基準
+                    clonedTarget.style.position = 'relative';
+                    hlPositions.forEach(pos => {
+                      const hl = clonedDoc.createElement('div');
+                      hl.setAttribute('aria-hidden', 'true');
+                      hl.style.cssText =
+                        'position:absolute;' +
+                        'top:'    + (pos.top    - 2) + 'px;' +
+                        'left:'   + (pos.left   - 2) + 'px;' +
+                        'width:'  + (pos.width  + 4) + 'px;' +
+                        'height:' + (pos.height + 4) + 'px;' +
+                        'background:rgba(251,191,36,0.55);' +
+                        'border-radius:3px;' +
+                        'pointer-events:none;' +
+                        'z-index:0;';
+                      // 插入到最前面，確保文字層在上方
+                      clonedTarget.insertBefore(hl, clonedTarget.firstChild);
+                    });
+                  }
+                }
               }
             });
 
