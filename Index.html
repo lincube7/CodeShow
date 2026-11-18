@@ -51,19 +51,24 @@
       border-right: 1px solid rgba(255, 255, 255, 0.1);
     }
 
-    /* 鮮亮螢光黃重點標記 (無邊框、清澈透亮高明度、精準包覆文字) */
+    /* 溫潤琥珀金重點螢光標記 (無邊框、清透溫潤不刺眼、inline-flex 精準垂直居中不位移) */
     .code-hl-token {
-      background-color: rgba(253, 224, 71, 0.75) !important;
+      background-color: rgba(251, 191, 36, 0.38) !important;
       color: inherit !important;
       border-radius: 4px;
-      padding: 1px 4px 3px 4px;
+      padding: 0 5px !important;
       margin: 0 1px;
       border: none !important;
       box-shadow: none !important;
       font-weight: 600;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      vertical-align: -1px !important;
+      height: 1.4em !important;
+      line-height: 1 !important;
       box-decoration-break: clone;
       -webkit-box-decoration-break: clone;
-      display: inline;
     }
 
     /* 執行錯誤行高亮 */
@@ -7320,20 +7325,9 @@ def __run_with_trace(user_code_str, stdin_str):
               scrollY: 0,
               logging: false,
               onclone: (clonedDoc) => {
-                // 1. 暫時關閉微扭曲 transform，徹底杜絕 html2canvas 座標轉換矩陣導致的背景與文字分離位移
+                // 暫時關閉微扭曲 transform，徹底杜絕 html2canvas 座標轉換矩陣導致的背景與文字分離位移
                 const warpEls = clonedDoc.querySelectorAll('.ocr-text-warp');
                 warpEls.forEach(el => { el.style.transform = 'none'; });
-
-                // 2. 注入轉圖專用補償樣式，精準抵銷 html2canvas 的 baseline 偏差，文字完美居中包覆
-                const s = clonedDoc.createElement('style');
-                s.innerHTML = `
-                  .code-hl-token {
-                    display: inline !important;
-                    padding: 1px 4px 5px 4px !important;
-                    background-color: rgba(253, 224, 71, 0.78) !important;
-                  }
-                `;
-                clonedDoc.head.appendChild(s);
               }
             });
 
