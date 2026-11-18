@@ -51,19 +51,19 @@
       border-right: 1px solid rgba(255, 255, 255, 0.1);
     }
 
-    /* 琥珀金重點螢光標記 (無邊框，溫潤醒目，保留原本語法高亮字色) */
+    /* 亮金琥珀重點螢光標記 (無邊框、清透鮮亮、精準垂直置中防止轉圖位移) */
     .code-hl-token {
-      background-color: rgba(245, 158, 11, 0.32) !important;
+      background-color: rgba(250, 204, 21, 0.48) !important;
       color: inherit !important;
       border-radius: 4px;
-      padding: 1px 4px;
+      padding: 2px 5px !important;
       margin: 0 1px;
       border: none !important;
       box-shadow: none !important;
       font-weight: 600;
-      box-decoration-break: clone;
-      -webkit-box-decoration-break: clone;
-      display: inline;
+      display: inline-block !important;
+      vertical-align: middle !important;
+      line-height: 1.18 !important;
     }
 
     /* 執行錯誤行高亮 */
@@ -7306,11 +7306,13 @@ def __run_with_trace(user_code_str, stdin_str):
             await nextTick();
 
             const targetEl = document.getElementById("carbon-target");
-            // 使用 html2canvas 將 DOM 轉為 2 倍高清 Canvas
+            // 使用 html2canvas 將 DOM 轉為 2 倍高清 Canvas (鎖定滾動座標原點避免位移)
             const rawCanvas = await html2canvas(targetEl, {
               scale: 2,
               useCORS: true,
               backgroundColor: null,
+              scrollX: 0,
+              scrollY: 0,
               logging: false
             });
 
