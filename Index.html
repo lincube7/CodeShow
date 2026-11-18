@@ -1722,11 +1722,12 @@
           <div>
             <div class="flex items-center justify-between mb-1.5 flex-wrap gap-2">
               <div class="flex items-center gap-2">
-                <label class="block text-xs font-medium text-slate-300">
+                <label class="block text-xs font-medium text-amber-400 font-mono">
                   貼上程式碼 (支援填空「??」與螢光畫重點「@@語法@@」)
                 </label>
-                <!-- 🪄 美化排版按鈕 -->
+                <!-- 🪄 美化排版按鈕 (僅 C / C++ 語言顯示) -->
                 <button
+                  v-if="form.language === 'c' || form.language === 'cpp'"
                   type="button"
                   @click="autoFormatUploadCode"
                   class="px-2.5 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-slate-700 text-xs flex items-center gap-1 active:scale-95 transition shadow-sm"
@@ -1735,9 +1736,6 @@
                   <span>美化排版</span>
                 </button>
               </div>
-              <span class="text-[11px] text-amber-400 font-mono">
-                💡 填空打「??」｜ 重點畫線用「@@語法@@」
-              </span>
             </div>
             <textarea 
               v-model="form.code" 
