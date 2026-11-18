@@ -51,19 +51,19 @@
       border-right: 1px solid rgba(255, 255, 255, 0.1);
     }
 
-    /* 亮金琥珀重點螢光標記 (無邊框、清透鮮亮、精準垂直置中防止轉圖位移) */
+    /* 鮮亮螢光黃重點標記 (無邊框、清澈透亮高明度、精準包覆文字) */
     .code-hl-token {
-      background-color: rgba(250, 204, 21, 0.48) !important;
+      background-color: rgba(253, 224, 71, 0.75) !important;
       color: inherit !important;
       border-radius: 4px;
-      padding: 2px 5px !important;
+      padding: 1px 4px 3px 4px;
       margin: 0 1px;
       border: none !important;
       box-shadow: none !important;
       font-weight: 600;
-      display: inline-block !important;
-      vertical-align: middle !important;
-      line-height: 1.18 !important;
+      box-decoration-break: clone;
+      -webkit-box-decoration-break: clone;
+      display: inline;
     }
 
     /* 執行錯誤行高亮 */
@@ -7305,15 +7305,36 @@ def __run_with_trace(user_code_str, stdin_str):
             }
             await nextTick();
 
+            // 確保網頁自訂字型 (JetBrains Mono 等) 完全解碼載入，杜絕 html2canvas 字型 baseline 計算偏差
+            if (document.fonts && document.fonts.ready) {
+              await document.fonts.ready;
+            }
+
             const targetEl = document.getElementById("carbon-target");
-            // 使用 html2canvas 將 DOM 轉為 2 倍高清 Canvas (鎖定滾動座標原點避免位移)
+            // 使用 html2canvas 將 DOM 轉為 2 倍高清 Canvas
             const rawCanvas = await html2canvas(targetEl, {
               scale: 2,
               useCORS: true,
               backgroundColor: null,
               scrollX: 0,
               scrollY: 0,
-              logging: false
+              logging: false,
+              onclone: (clonedDoc) => {
+                // 1. 暫時關閉微扭曲 transform，徹底杜絕 html2canvas 座標轉換矩陣導致的背景與文字分離位移
+                const warpEls = clonedDoc.querySelectorAll('.ocr-text-warp');
+                warpEls.forEach(el => { el.style.transform = 'none'; });
+
+                // 2. 注入轉圖專用補償樣式，精準抵銷 html2canvas 的 baseline 偏差，文字完美居中包覆
+                const s = clonedDoc.createElement('style');
+                s.innerHTML = `
+                  .code-hl-token {
+                    display: inline !important;
+                    padding: 1px 4px 5px 4px !important;
+                    background-color: rgba(253, 224, 71, 0.78) !important;
+                  }
+                `;
+                clonedDoc.head.appendChild(s);
+              }
             });
 
             // 智能壓縮與縮放最佳化
