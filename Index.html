@@ -51,6 +51,21 @@
       border-right: 1px solid rgba(255, 255, 255, 0.1);
     }
 
+    /* 琥珀金重點螢光標記 (無邊框，溫潤醒目，保留原本語法高亮字色) */
+    .code-hl-token {
+      background-color: rgba(245, 158, 11, 0.32) !important;
+      color: inherit !important;
+      border-radius: 4px;
+      padding: 1px 4px;
+      margin: 0 1px;
+      border: none !important;
+      box-shadow: none !important;
+      font-weight: 600;
+      box-decoration-break: clone;
+      -webkit-box-decoration-break: clone;
+      display: inline;
+    }
+
     /* 執行錯誤行高亮 */
     .exec-line-error {
       background: rgba(239, 68, 68, 0.18) !important;
@@ -935,6 +950,11 @@
                     :class="codeWrapEnabled ? 'whitespace-pre-wrap break-words leading-relaxed py-0.5' : 'whitespace-pre overflow-x-auto flex items-center'">
                     <template v-for="(seg, sIdx) in line.segments" :key="sIdx">
                       <span v-if="seg.type === 'text'">{{ seg.content }}</span>
+                      <mark 
+                        v-else-if="seg.type === 'highlight'" 
+                        class="code-hl-token select-text">
+                        {{ seg.content }}
+                      </mark>
                       <input
                         v-else-if="seg.type === 'blank'"
                         type="text"
@@ -1682,7 +1702,7 @@
             <div class="flex items-center justify-between mb-1.5 flex-wrap gap-2">
               <div class="flex items-center gap-2">
                 <label class="block text-xs font-medium text-slate-300">
-                  貼上程式碼 (若含填空練習請用「??」作為空格標記)
+                  貼上程式碼 (支援填空「??」與螢光畫重點「@@語法@@」)
                 </label>
                 <!-- 🪄 美化排版按鈕 -->
                 <button
@@ -1695,14 +1715,14 @@
                 </button>
               </div>
               <span class="text-[11px] text-amber-400 font-mono">
-                💡 填空題可打「??」(短空) 或「????」(長空)
+                💡 填空打「??」｜ 重點畫線用「@@語法@@」
               </span>
             </div>
             <textarea 
               v-model="form.code" 
               @input="onCodeInput"
               rows="7" 
-              placeholder="在此貼上或編寫程式碼... 如: for i in ??: if ??: print(i)"
+              placeholder="在此貼上或編寫程式碼... 如: for i in range(1, @@n-1@@): if ??: print(i)"
               class="w-full bg-slate-950 font-code border border-slate-800 rounded-lg p-3 text-xs text-emerald-400 focus:outline-none focus:border-indigo-500"></textarea>
           </div>
 
@@ -3661,21 +3681,26 @@ print("Result:", calculate_sum(10))`
 
         // ==================== 逐行執行器與視覺化引擎 (Pyodide & JSCPP) ====================
 
-        // 動態解析原始碼，拆分行並識別「??」填空標記
+        // 動態解析原始碼，拆分行並識別「??」填空標記 與「@@...@@」螢光重點標記
         const parsedCodeLines = computed(() => {
           if (!activeProblem.value || !activeProblem.value.sourceCode) return [];
           const lines = activeProblem.value.sourceCode.split('\n');
           let blankCounter = 0;
           return lines.map((lineStr, lineIdx) => {
             const segments = [];
-            // 正規比對 ?? 或 ???? 等填空符號
-            const parts = lineStr.split(/(\?{2,})/g);
+            // 正規比對 ?? 填空 或 @@重點語法@@ 標記
+            const parts = lineStr.split(/(\?{2,}|@@[\s\S]*?@@)/g);
             parts.forEach(part => {
               if (/^\?{2,}$/.test(part)) {
                 segments.push({
                   type: 'blank',
                   blankIndex: blankCounter++,
                   rawMarker: part
+                });
+              } else if (part.startsWith('@@') && part.endsWith('@@') && part.length >= 4) {
+                segments.push({
+                  type: 'highlight',
+                  content: part.slice(2, -2)
                 });
               } else if (part.length > 0) {
                 segments.push({
@@ -3766,7 +3791,7 @@ print("Result:", calculate_sum(10))`
           });
         };
 
-        // 組合最終送入直譯器的代碼（若為填空題，則將 ?? 替換為學生輸入）
+        // 組合最終送入直譯器的代碼（若為填空題，則將 ?? 替換為學生輸入，並自動純化剝除 @@ 螢光重點標記）
         const getSynthesizedCode = () => {
           if (!activeProblem.value || !activeProblem.value.sourceCode) return '';
           let code = activeProblem.value.sourceCode;
@@ -3778,6 +3803,8 @@ print("Result:", calculate_sum(10))`
               return ans;
             });
           }
+          // 自動純化：去除 @@重點代碼@@ 的包裹標記
+          code = code.replace(/@@([\s\S]*?)@@/g, '$1');
           return code;
         };
 
@@ -6106,7 +6133,7 @@ int main() {
           sandboxError.value = null;
           sandboxStdout.value = '';
           const lang = sandboxLang.value;
-          const code = sandboxCode.value || '';
+          const code = (sandboxCode.value || '').replace(/@@([\s\S]*?)@@/g, '$1');
           const inputData = sandboxStdin.value || '';
 
           try {
@@ -6186,7 +6213,7 @@ __sb_result = __sb_stdout.getvalue()
           sandboxExecuting.value = true;
           sandboxError.value = null;
           const lang = sandboxLang.value;
-          const code = sandboxCode.value || '';
+          const code = (sandboxCode.value || '').replace(/@@([\s\S]*?)@@/g, '$1');
           const inputData = sandboxStdin.value || '';
 
           try {
@@ -7206,6 +7233,13 @@ def __run_with_trace(user_code_str, stdin_str):
           nextTick(() => {
             if (previewCode.value && window.Prism) {
               Prism.highlightElement(previewCode.value);
+              // 將 @@重點語法@@ 轉換為琥珀金螢光標記 (無虛線邊框，柔和清晰)
+              if (previewCode.value.innerHTML && previewCode.value.innerHTML.includes('@@')) {
+                previewCode.value.innerHTML = previewCode.value.innerHTML.replace(
+                  /@@([\s\S]*?)@@/g,
+                  '<mark class="code-hl-token">$1</mark>'
+                );
+              }
             }
           });
         };
