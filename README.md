@@ -531,3 +531,16 @@ Google Apps Script 的網頁應用程式在修改程式碼後，**單純按儲�
     const h = b.height * canvasScale;
     ```
   * 冒號 `:` 與等號 `==` 恢復 2~3px 舒適間距，毫釐不差。
+
+#### 踩坑 6：連續行劃重點時底色塊垂直黏連重疊 (Tight Line-Height & Vertical Padding Collision)
+* **問題現象**：當在連續兩行以上使用 `@@重點語法@@` 劃線標記時（例如第 7 行 `if @@d<min_d@@:` 與第 8 行 `@@min_d,min_a,min_b=d,a,b@@`），上下兩行的琥珀金底色塊會產生 1~2px 的垂直黏連或重疊（幾何負間距 Gap: -4px），視覺上黏成一大塊，影響美觀與閱讀舒適度。
+* **根因分析**：
+  1. `<pre class="line-numbers text-xs">` 原始行高採用緊湊的 1rem (16px)。
+  2. 文字本身高度約 12px，加上 `.code-hl-token` 原本上下帶有 `padding: 2px`，單個標記的高度達 16~18px。
+  3. 當相鄰兩行皆有標記時，第 1 行色塊的 bottom 座標會超過第 2 行色塊的 top 座標，色塊邊界互相穿透。
+* **根本解法**：
+  * **行高現代化黃金比例**：將 `#carbon-target pre`、`#carbon-target .line-numbers-rows > span` 以及 Vue 模板行號 span 的 `line-height` 一律設定為 `1.7 !important;`（約 20.4px，符合 Carbon / VS Code 經典視覺標準）。
+  * **垂直 Padding 微調**：將 `.code-hl-token` 的上下內邊距由 `2px` 微調為 `1px`（`padding: 1px 5px !important;`），左右維持 5px 保持包裹豐滿感，垂直方向收斂 2px。
+  * **行號與克隆 DOM 嚴格同動**：在 `onclone` 裡為 `clonedPre.style.lineHeight = '1.7'` 與行號 `span.style.cssText` 同步加上 `line-height: 1.7;`，確保靜態文字與動態 Canvas 2D 底色塊完全不走位。
+  * **成果**：連續多行劃重點時，上下相鄰行底色塊之間自然保留 3~4px 寬鬆優雅的深色呼吸間隙，徹底告別黏連，排版質感大幅提升。
+

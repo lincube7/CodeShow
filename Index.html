@@ -48,6 +48,7 @@
       border: none !important;
       box-shadow: none !important;
       position: relative !important;
+      line-height: 1.7 !important;
     }
     /* 行號容器樣式：由 JS textContent 顯示數字，不依賴 Prism CSS counter */
     #carbon-target .line-numbers-rows {
@@ -67,6 +68,7 @@
       text-align: right !important;
       padding-right: 0.6em !important;
       counter-increment: none !important;
+      line-height: 1.7 !important;
     }
     #carbon-target .line-numbers-rows > span::before {
       content: none !important;
@@ -77,7 +79,7 @@
       background-color: rgba(251, 191, 36, 0.55) !important;
       color: inherit !important;
       border-radius: 3px;
-      padding: 2px 5px !important;
+      padding: 1px 5px !important;
       margin: 0 1px;
       border: none !important;
       box-shadow: none !important;
@@ -1812,7 +1814,7 @@
 
                     <!-- 真正的程式碼高亮主體 (層級 z-index: 10，強力防護下支援微扭曲 text-warp) -->
                     <div class="p-2 relative z-10" :class="form.ocrProtection === 'strong' ? 'ocr-text-warp' : ''">
-                      <pre class="line-numbers text-xs" :class="'language-' + form.language" style="position: relative; padding-left: 3.8em;"><span class="line-numbers-rows" aria-hidden="true" style="position: absolute; top: 0; left: 0; width: 3em; border-right: 1px solid rgba(255, 255, 255, 0.15); pointer-events: none; user-select: none; padding-top: 1.25rem;"><span v-for="n in previewLineCount" :key="n" style="display: block; text-align: right; padding-right: 0.6em; color: rgba(255, 255, 255, 0.45); font-size: 100%;">{{ n }}</span></span><code ref="previewCode" :class="['language-' + form.language, form.ocrProtection === 'strong' ? 'ocr-chromatic-strong' : (form.ocrProtection === 'standard' ? 'ocr-chromatic-standard' : '')]"></code></pre>
+                      <pre class="line-numbers text-xs" :class="'language-' + form.language" style="position: relative; padding-left: 3.8em; line-height: 1.7;"><span class="line-numbers-rows" aria-hidden="true" style="position: absolute; top: 0; left: 0; width: 3em; border-right: 1px solid rgba(255, 255, 255, 0.15); pointer-events: none; user-select: none; padding-top: 1.25rem;"><span v-for="n in previewLineCount" :key="n" style="display: block; text-align: right; padding-right: 0.6em; color: rgba(255, 255, 255, 0.45); font-size: 100%; line-height: 1.7;">{{ n }}</span></span><code ref="previewCode" :class="['language-' + form.language, form.ocrProtection === 'strong' ? 'ocr-chromatic-strong' : (form.ocrProtection === 'standard' ? 'ocr-chromatic-standard' : '')]"></code></pre>
                     </div>
 
                     <!-- 前置穿透式干擾柵線 (覆蓋在文字最上方 z-index: 20，物理切割字體筆畫) -->
@@ -7423,6 +7425,7 @@ def __run_with_trace(user_code_str, stdin_str):
                 if (clonedPre) {
                   clonedPre.style.position = 'relative';
                   clonedPre.style.paddingLeft = '3.8em';
+                  clonedPre.style.lineHeight = '1.7';
 
                   const oldRows = clonedPre.querySelector('.line-numbers-rows');
                   if (oldRows) oldRows.remove();
@@ -7439,7 +7442,7 @@ def __run_with_trace(user_code_str, stdin_str):
                     const span = clonedDoc.createElement('span');
                     span.style.cssText =
                       'display:block;text-align:right;padding-right:0.6em;' +
-                      'color:rgba(255,255,255,0.45);';
+                      'color:rgba(255,255,255,0.45);line-height:1.7;';
                     span.textContent = String(i + 1);
                     rowsSpan.appendChild(span);
                   }
