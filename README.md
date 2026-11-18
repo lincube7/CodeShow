@@ -451,3 +451,83 @@ Google Apps Script 的網頁應用程式在修改程式碼後，**單純按儲�
 * **問題現象**：使用者在除錯中途按「停止除錯 返回圖片」，再按「逐行執行」進入時，仍停在上次離開的步驟，未重新開始。
 * **解決方案**：將退出動作統整為 `returnToImageMode`，連動觸發 `resetExecution(false)`，確保「停止除錯 返回圖片」、頂部「🖼️ 圖片模式」與右上角「✕ 關閉」皆徹底重設除錯狀態。
 
+
+
+---
+
+### 9. 🎨 Carbon 程式碼卡片渲染、行號對齊與重點高亮踩坑終極覆盤 (v4.1)
+
+在開發老師端「發布新程式碼 (Carbon 圖片化)」功能時，為了實現「行號對齊」、「語法高亮」與「`@@重點代碼@@` 溫潤琥珀金底色塊」能在**即時預覽（Modal）**與**生成圖片（Google Drive 存檔）**中達到 100% 像素級一致，歷經了跨渲染引擎（WebKit / html2canvas / Canvas 2D）與前端框架（Vue 3 響應式虛擬 DOM）深層衝突的極限除錯。為避免日後維護重蹈覆轍，特此將 5 大核心巨坑與根本解法完整歸納存檔：
+
+#### 踩坑 1：即時預覽行號消失與垂直線孤立（Prism line-numbers 與 CSS counter 衝突）
+* **問題現象**：在彈出的上傳 Modal 中，即時預覽卡片左側只有一條微弱的垂直線，行號數字（1, 2, 3...）完全空白消失。
+* **根因分析**：
+  1. 程式碼原先試圖用 JavaScript 手動向 `<pre>` 裡注入 `span.line-numbers-rows` 並給予 `span.textContent = 1, 2, 3...`。
+  2. 但透過 CDN 懶加載引入的 `prism-line-numbers.min.js`，在語法高亮完成後自動監聽 `complete` hook，掃描到帶有 `line-numbers` class 的 `<pre>` 時，會強制清空並重新建立空的 `<span></span>`（Prism 原生設計是依賴其專用 CSS 中的 `::before { content: counter(linenumber); }` 顯示計數）。
+  3. 與此同時，專案自定義 CSS 為了避免樣式衝突，寫了 `#carbon-target .line-numbers-rows > span::before { content: none !important; }`，直接將 Prism 的 counter 文字全數滅頂。
+  4. 兩者相撞：Prism 抹平了 JS 的 `textContent`，而 CSS 又隱藏了 `::before`，最終畫面僅剩容器的右側邊框垂直線，數字完全消失。
+* **根本解法**：
+  * **行號改由 Vue 3 模板原生響應式管理**：在 Vue 模板中直接宣告 `<span class="line-numbers-rows"><span v-for="n in previewLineCount" :key="n">{{ n }}</span></span>`，並建立計算屬性 `previewLineCount` 即時計算行數。
+  * 徹底拔除 `prism-line-numbers.min.js` 與 `prism-line-numbers.min.css` 的載入，拒絕第三方插件擅自搶佔操控 DOM。使用者打字與貼上代碼時，行號隨行數以 0 毫秒延遲原生渲染，徹底根絕覆蓋與時序問題。
+
+#### 踩坑 2：Vue 虛擬 DOM Patch 衝刷導致生成圖片底色完全消失（Virtual DOM vs. Imperative DOM）
+* **問題現象**：在即時預覽中明明能看到溫潤琥珀金底色塊，但一點擊「轉成圖片並發布 🚀」，生成的圖片上行號健全，但重點程式的底色塊全部憑空消失。
+* **根因分析**：
+  1. 在原始 Vue 模板中，程式碼容器寫為 `<code ref="previewCode">{{ form.code || '// 尚未輸入程式碼' }}</code>`，綁定了 mustache 表達式。
+  2. 當使用者點擊「轉成圖片並發布」時，觸發了 `uploading.value = true`，使 Vue 組件狀態改變。
+  3. Vue 排程執行 Virtual DOM Patch。Vue 比對發現實際 DOM（剛被 Prism 與 `<mark>` 替換過）與模板宣告的純文字不符，**瞬間將整個 `<code>` 強制重刷還原成純文字 `form.code`**！
+  4. 緊接著 `submitProblem()` 執行 `querySelectorAll('.code-hl-token')` 時，抓到的是**空陣列 `[]`**！Canvas 2D 因而沒有繪製任何底色塊，導致成品圖底色全無。
+* **根本解法**：
+  * 清空 `<code ref="previewCode"></code>` 內部的 mustache 標籤，改為完全由 `updateHighlight()` 命令式注入高亮 HTML，消除 Vue Virtual DOM 衝刷干擾。
+  * 在 `submitProblem()` 開頭加入 `await nextTick(); updateHighlight(); await nextTick();`，確保在座標測量與 html2canvas 克隆前，`<mark class="code-hl-token">` 在 DOM 中 100% 存在。
+
+#### 踩坑 3：Prism 全域假物件引發短路、白字與殘留菱形問號 (`highlightElement is not a function`)
+* **問題現象**：即時預覽有行號，但程式碼全變成白字沒有語法高亮，且 `@@` 變成了菱形問號鑽石符號（`\uFFFD` ），點擊發布時跳出 alert 報錯：`產生圖片失敗: Prism.highlightElement is not a function`。
+* **根因分析**：
+  1. 頁面頂部寫了 `<script>window.Prism = window.Prism || {}; window.Prism.manual = true;</script>`。
+  2. 在懶載入函式 `ensurePrismLoaded()` 中寫了 `if (prismLoaded || window.Prism) { return Promise.resolve(); }`。
+  3. 因為 `window.Prism` 被預先初始化為 `{ manual: true }`，邏輯誤判為「Prism 已載入」，直接跳過加載 CDN 腳本！
+  4. 真實的 `prism.min.js` 根本沒被下載。高亮邏輯在第一步把 `@@` 換成佔位符 `\uFFFD` 後，調用 `Prism.highlightElement()` 噴出 `is not a function` 異常而中斷，沒能執行第二步換回 `<mark>`，使佔位符殘留畫面且發布中斷。
+* **根本解法**：
+  * 移除頂部全域假物件 `window.Prism = { manual: true }`。
+  * 嚴格判斷 Prism 是否真就緒：`if (prismLoaded && window.Prism && typeof window.Prism.highlightElement === 'function')`。
+  * 在 `ensurePrismLoaded()` 內部載入 `prism.min.js` 完成後，再配置 `window.Prism.manual = true`。
+  * 在 `updateHighlight()` 開頭增加型別防護，Prism 未就緒時維持純文字，不提前替換佔位符。
+  * 在 `submitProblem()` 顯式加入 `await ensurePrismLoaded()`，保證轉圖前 Prism 模組絕對載入完畢。
+
+#### 踩坑 4：html2canvas 對 inline background 的 Y 軸偏移缺陷與 Canvas 2D 基線補償
+* **問題現象**：生成的圖片中，重點底色塊整體往上位移了約半個行高，文字沉在底色塊的邊緣。
+* **根因分析**：
+  1. `html2canvas` 1.4.1 在繪製 `display: inline` 元素的背景時，是以行盒（line-box）的頂部作為起點；但在繪製等寬字體（JetBrains Mono）文字時，是以基線（baseline）為錨點。
+  2. 在等寬字型中，行高（如 24px）大於字型大小（12px）時存在 `(lineHeight - fontSize) / 2` 的 half-leading。瀏覽器原生引擎會自動在文字周圍居中，但 html2canvas 的 CSS parser 忽略了這段落差，直接將背景貼頂繪製，形成約 8.5px 的垂直視覺向上偏移。
+  3. 若盲目將 mark 改為 `display: inline-block`，html2canvas 會因行內排版父層 baseline 錯位，導致背景變成巨大塊狀且向上漂移更加嚴重。
+* **根本解法**：
+  * 在真實 DOM 測量每個 `<mark>` 的精確相對邊界 `getClientRects()`。
+  * 測量前先暫時移除 `.ocr-text-warp`（消除 0.18deg 旋轉對水平外接矩形的幾何擴大）。
+  * 在 `html2canvas` 的 `onclone` 裡將 `<mark>` 的背景設為透明（消除 html2canvas 自帶的偏位背景）。
+  * 渲染完成後，建立獨立的 `finalCanvas`，先繪入底圖，再以 Canvas 2D 原生 `roundRect` 在 `y = (b.top + 8.5) * canvasScale` 處疊加 `rgba(251, 191, 36, 0.55)` 溫潤琥珀金圓角色塊，達成文字與背景的像素級完美包裹。
+
+#### 踩坑 5：克隆 DOM 替換為純 span 造成幾何排版縮回，底色向右遮蓋冒號 `:` 與等號 `=`
+* **問題現象**：生成的圖片中，底色塊位置（Y 軸）正確，但向右多延伸了一些，第 5 行遮蓋到了後方的冒號 `:`，第 11、12 行遮蓋到了後方的等號 `=`；而即時預覽完全正常。
+* **根因分析**：
+  1. 在真實預覽中，`.code-hl-token` 帶有 `padding: 2px 5px !important; margin: 0 1px;`，因此後續的冒號 `:` 與等號 `==` 會被向右推開 6px。
+  2. 但先前在 `onclone` 裡，為了去掉背景，寫了 `clonedDoc.createElement('span')` 並替換掉 `mark`。此白板 `<span>` 沒有任何 class，**失去了 5px 的右側 padding 與 1px 的 margin**！
+  3. 結果在克隆 DOM 裡，文字中的冒號 `:` 與等號 `==` 向左縮回了 6px；而 Canvas 2D 卻是以真實 DOM 原本推開的寬度繪製底色（且公式中還額外寫了 `w + 4` 膨脹值）。兩者疊加，底色塊直接撞上並蓋住了縮回來的冒號與等號。
+* **根本解法**：
+  * 在 `onclone` 中**嚴格禁止替換 DOM 節點**，改為保留 `<mark>` 原本的幾何排版（保留其 padding 與 margin），僅將背景透明化：
+    ```javascript
+    clonedDoc.querySelectorAll('.code-hl-token').forEach(mark => {
+      mark.style.setProperty('background', 'transparent', 'important');
+      mark.style.setProperty('background-color', 'transparent', 'important');
+      mark.style.setProperty('box-shadow', 'none', 'important');
+      mark.style.setProperty('border', 'none', 'important');
+    });
+    ```
+  * 繪製公式剔除人為膨脹值，1:1 精準映射：
+    ```javascript
+    const x = b.left * canvasScale;
+    const y = (b.top + 8.5) * canvasScale;
+    const w = b.width * canvasScale;
+    const h = b.height * canvasScale;
+    ```
+  * 冒號 `:` 與等號 `==` 恢復 2~3px 舒適間距，毫釐不差。
