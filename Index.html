@@ -7247,13 +7247,9 @@ def __run_with_trace(user_code_str, stdin_str):
         const updateHighlight = () => {
           nextTick(() => {
             if (previewCode.value && window.Prism) {
-              // ★ 關鍵修復：先用 \uFFFD 佔位符替換 @@...@@ 再餵給 Prism
-              //   \uFFFD 不是任何程式語言的合法 token，Prism 不會拆分它
-              //   這樣無論 Python(@裝飾器) 或 C++(^位元運算) 都安全
               const rawCode = form.value.code || '';
               const hasMarks = rawCode.includes('@@');
               if (hasMarks) {
-                // 以 \uFFFD 包圍標記區域後放入 textContent，讓 Prism 看到乾淨的佔位符
                 const markedCode = rawCode.replace(/@@([\s\S]*?)@@/g, '\uFFFD$1\uFFFD');
                 previewCode.value.textContent = markedCode;
               }
@@ -7264,6 +7260,27 @@ def __run_with_trace(user_code_str, stdin_str):
                   /\uFFFD([\s\S]*?)\uFFFD/g,
                   '<mark class="code-hl-token">$1</mark>'
                 );
+              }
+              // ★ 手動建立行號（不依賴 Prism line-numbers plugin）
+              // Prism line-numbers plugin 在 highlightElement(<code>) 時不一定會觸發
+              const preEl = previewCode.value.parentElement; // <pre>
+              if (preEl) {
+                // 移除舊的行號容器
+                const oldRows = preEl.querySelector('.line-numbers-rows');
+                if (oldRows) oldRows.remove();
+                // 計算行數
+                const codeText = rawCode.includes('@@')
+                  ? rawCode.replace(/@@([\s\S]*?)@@/g, '$1')
+                  : rawCode;
+                const lineCount = (codeText || '').split('\n').length;
+                // 建立行號容器
+                const rowsSpan = document.createElement('span');
+                rowsSpan.setAttribute('aria-hidden', 'true');
+                rowsSpan.className = 'line-numbers-rows';
+                for (let i = 0; i < lineCount; i++) {
+                  rowsSpan.appendChild(document.createElement('span'));
+                }
+                preEl.appendChild(rowsSpan);
               }
             }
           });
@@ -7321,102 +7338,26 @@ def __run_with_trace(user_code_str, stdin_str):
 
           uploading.value = true;
           try {
-            // 確保 html2canvas 已載入（懶載入）
             await ensureHtml2CanvasLoaded();
 
-            // 確保噪點畫布於轉圖前即時繪製完畢
             if (form.value.ocrProtection === 'strong') {
               drawDynamicNoise();
             }
             await nextTick();
 
-            // 確保網頁自訂字型 (JetBrains Mono 等) 完全解碼載入，杜絕 html2canvas 字型 baseline 計算偏差
             if (document.fonts && document.fonts.ready) {
               await document.fonts.ready;
             }
 
             const targetEl = document.getElementById("carbon-target");
+            await new Promise(r => requestAnimationFrame(r));
 
-            await new Promise(r => requestAnimationFrame(r)); // 確保 layout committed
+            // ★★★ 全新方案：完全在 onclone 裡處理 ★★★
+            // 不測量真實 DOM 座標、不插入 overlay div、不用 Canvas 2D
+            // 一切修改都在 clone 的 DOM 上進行，html2canvas 直接渲染 clone
+            const rawCode = form.value.code || '';
+            const lineCount = rawCode.replace(/@@([\s\S]*?)@@/g, '$1').split('\n').length;
 
-            // ★★ 關鍵修復：ocr-text-warp 有 rotate/skewX transform
-            //   若在 transform 存在時量測 getBoundingClientRect，
-            //   onclone 移除 transform 後 overlay div 座標就會錯位（上移）。
-            //   解法：量測前先暫時移除 codeWrapper 的 transform，量完後恢復。
-            const codeWrapper = targetEl.querySelector('.code-pad-left');
-            const savedTransform = codeWrapper ? codeWrapper.style.transform : '';
-            const savedTransformOrigin = codeWrapper ? codeWrapper.style.transformOrigin : '';
-            if (codeWrapper && codeWrapper.classList.contains('ocr-text-warp')) {
-              codeWrapper.style.transform = 'none';
-              codeWrapper.style.transformOrigin = '';
-              // 強制重新 layout
-              void codeWrapper.offsetHeight;
-            }
-
-            // 測量 mark 位置（相對於 codeWrapper，此時無 transform）
-            const wrapperRect = codeWrapper
-              ? codeWrapper.getBoundingClientRect()
-              : targetEl.getBoundingClientRect();
-
-            const hlPositions = [];
-            const measureIntoPositions = () => {
-              targetEl.querySelectorAll('.code-hl-token').forEach(mark => {
-                const r = mark.getBoundingClientRect();
-                if (r.width > 0 && r.height > 0) {
-                  hlPositions.push({
-                    top:    r.top    - wrapperRect.top,
-                    left:   r.left   - wrapperRect.left,
-                    width:  r.width,
-                    height: r.height
-                  });
-                }
-              });
-            };
-            measureIntoPositions();
-
-            // 備援：若 marks 消失，用 \uFFFD 佔位符重新注入後再測量
-            if (hlPositions.length === 0 && form.value.code.includes('@@')) {
-              if (previewCode.value && window.Prism) {
-                const rawCode = form.value.code || '';
-                const markedCode = rawCode.replace(/@@([\s\S]*?)@@/g, '\uFFFD$1\uFFFD');
-                previewCode.value.textContent = markedCode;
-                Prism.highlightElement(previewCode.value);
-                if (previewCode.value.innerHTML.includes('\uFFFD')) {
-                  previewCode.value.innerHTML = previewCode.value.innerHTML.replace(
-                    /\uFFFD([\s\S]*?)\uFFFD/g,
-                    '<mark class="code-hl-token">$1</mark>'
-                  );
-                }
-                await new Promise(r => requestAnimationFrame(r));
-                measureIntoPositions();
-              }
-            }
-
-            // 恢復 codeWrapper transform（恢復視覺效果）
-            if (codeWrapper && codeWrapper.classList.contains('ocr-text-warp')) {
-              codeWrapper.style.transform = savedTransform;
-              codeWrapper.style.transformOrigin = savedTransformOrigin;
-            }
-
-            // 在 codeWrapper 中注入 overlay div（在 html2canvas 之前！）
-            // 位置是在「無 transform」空間量測的，與 onclone 移除 transform 後一致
-            const overlayDivs = [];
-            if (codeWrapper && hlPositions.length > 0) {
-              hlPositions.forEach(pos => {
-                const div = document.createElement('div');
-                div.style.cssText =
-                  'position:absolute;pointer-events:none;z-index:12;' +
-                  'background:rgba(251,191,36,0.55);border-radius:3px;' +
-                  'top:'    + (pos.top    - 2) + 'px;' +
-                  'left:'   + (pos.left   - 5) + 'px;' +
-                  'width:'  + (pos.width  + 10) + 'px;' +
-                  'height:' + (pos.height + 4) + 'px;';
-                codeWrapper.appendChild(div);
-                overlayDivs.push(div);
-              });
-            }
-
-            // 使用 html2canvas 將 DOM 轉為 2 倍高清 Canvas（overlay div 已在 DOM 內）
             const rawCanvas = await html2canvas(targetEl, {
               scale: 2,
               useCORS: true,
@@ -7425,41 +7366,57 @@ def __run_with_trace(user_code_str, stdin_str):
               scrollY: 0,
               logging: false,
               onclone: (clonedDoc) => {
-                // 1. 移除 ocr-text-warp transform（與量測時一致，overlay 位置正確）
+                // --- 1. 移除 OCR 變形 ---
                 clonedDoc.querySelectorAll('.ocr-text-warp').forEach(el => {
-                  el.style.transform = 'none';
-                  el.style.transformOrigin = '';
+                  el.classList.remove('ocr-text-warp');
                 });
-                // 2. 移除 <mark> 背景色（高亮框已由 overlay div 負責）
+
+                // --- 2. 修復高亮底色 Y 偏移 ---
+                // html2canvas 渲染 display:inline 的 background-color 時 Y 座標會偏移
+                // 解法：改為 inline-block，html2canvas 對 inline-block 背景渲染正確
                 clonedDoc.querySelectorAll('.code-hl-token').forEach(el => {
-                  el.style.setProperty('background', 'none', 'important');
-                  el.style.setProperty('box-shadow', 'none', 'important');
+                  el.style.setProperty('display', 'inline-block', 'important');
+                  el.style.setProperty('line-height', 'inherit', 'important');
+                  el.style.setProperty('vertical-align', 'baseline', 'important');
                 });
-                // 3. ★ 行號修復：html2canvas 不支援 CSS counter()
-                //    把數字文字直接寫入 span 本體（取代 ::before pseudo-element）
-                //    同時確保 .line-numbers-rows 本身可見
-                const lineRows = clonedDoc.querySelector('.line-numbers-rows');
-                if (lineRows) {
-                  lineRows.style.cssText =
+
+                // --- 3. 解除 overflow:hidden 裁切（讓行號可見）---
+                const codeContainer = clonedDoc.querySelector('[ref="codeContainerRef"]')
+                  || clonedDoc.querySelector('#carbon-target .relative.overflow-hidden');
+                if (codeContainer) {
+                  codeContainer.style.overflow = 'visible';
+                }
+
+                // --- 4. 手動建立行號（不依賴 CSS counter / Prism plugin）---
+                const clonedPre = clonedDoc.querySelector('#carbon-target pre');
+                if (clonedPre) {
+                  // 移除可能殘留的舊行號
+                  const oldRows = clonedPre.querySelector('.line-numbers-rows');
+                  if (oldRows) oldRows.remove();
+
+                  // 建立行號容器
+                  const rowsSpan = clonedDoc.createElement('span');
+                  rowsSpan.className = 'line-numbers-rows';
+                  rowsSpan.setAttribute('aria-hidden', 'true');
+                  rowsSpan.style.cssText =
                     'position:absolute;top:0;left:-3.8em;width:3em;' +
                     'border-right:1px solid rgba(255,255,255,0.15);' +
-                    'pointer-events:none;user-select:none;';
-                  const lineSpans = lineRows.querySelectorAll('span');
-                  lineSpans.forEach((span, i) => {
+                    'pointer-events:none;user-select:none;font-size:inherit;';
+
+                  for (let i = 0; i < lineCount; i++) {
+                    const span = clonedDoc.createElement('span');
                     span.style.cssText =
                       'display:block;text-align:right;padding-right:0.6em;' +
-                      'color:rgba(255,255,255,0.45);line-height:inherit;';
-                    // 清空 ::before 的 counter 文字，改為直接 textContent
+                      'color:rgba(255,255,255,0.45);counter-increment:none;';
                     span.textContent = String(i + 1);
-                  });
+                    rowsSpan.appendChild(span);
+                  }
+                  clonedPre.style.position = 'relative';
+                  clonedPre.appendChild(rowsSpan);
                 }
               }
             });
 
-            // 移除真實 DOM 中的 overlay div（不影響頁面顯示）
-            overlayDivs.forEach(div => div.remove());
-
-            // 智能壓縮與縮放最佳化
             const base64Data = compressCanvas(rawCanvas, 1350, 0.88);
 
             if (typeof google !== 'undefined' && google.script && google.script.run) {
@@ -7476,7 +7433,6 @@ def __run_with_trace(user_code_str, stdin_str):
                 })
                 .saveProblem(form.value.course, actualChapter, form.value.problemNo, base64Data, form.value.language, form.value.code);
             } else {
-              // 本地模擬
               setTimeout(() => {
                 uploading.value = false;
                 showUploadModal.value = false;
