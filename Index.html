@@ -1727,9 +1727,9 @@
                 <label class="block text-xs font-medium text-amber-400 font-mono">
                   貼上程式碼 (支援填空「??」與螢光畫重點「@@語法@@」)
                 </label>
-                <!-- 🪄 美化排版按鈕 (僅 C / C++ 語言顯示) -->
+                <!-- 🪄 美化排版按鈕 (大括號語言 C / C++ / Java / JS 顯示，Python 隱藏) -->
                 <button
-                  v-if="form.language === 'c' || form.language === 'cpp'"
+                  v-if="form.language !== 'python'"
                   type="button"
                   @click="autoFormatUploadCode"
                   class="px-2.5 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-slate-700 text-xs flex items-center gap-1 active:scale-95 transition shadow-sm"
