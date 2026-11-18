@@ -7312,11 +7312,14 @@ def __run_with_trace(user_code_str, stdin_str):
 
             const targetEl = document.getElementById("carbon-target");
 
-            // ★ 核心修復：在真實 DOM 預先測量每個螢光框的精確像素位置，
-            //   繞過 html2canvas inline-element background 計算的 bug。
-            //   html2canvas 在渲染 Prism line-numbers 環境時，計算 <mark> Y 座標
-            //   會多算一個錯誤偏移，導致背景色塊上移。解法：完全不讓 html2canvas
-            //   渲染任何 mark 背景，改由我們自行在 onclone 注入精準定位的 <div>。
+            // ★ 終極修復策略：
+            //   html2canvas 渲染 inline <mark> 背景時有根本性 bug（Y 座標計算錯誤），
+            //   無論如何調整 CSS/onclone 都無法修正（歷經 6 次嘗試驗證）。
+            //   解法：
+            //   ① 在真實 DOM（版面正確）中預先測量螢光框的精確像素座標
+            //   ② onclone 中移除 mark 背景，讓 html2canvas 只渲染純文字
+            //   ③ html2canvas 渲染完畢後，直接用 Canvas 2D API 把高亮畫上去
+            //   → 座標 100% 精準，與 stacking context / Prism / transform 完全無關
             const targetRect = targetEl.getBoundingClientRect();
             const hlPositions = [];
             targetEl.querySelectorAll('.code-hl-token').forEach(mark => {
@@ -7338,48 +7341,47 @@ def __run_with_trace(user_code_str, stdin_str):
               scrollY: 0,
               logging: false,
               onclone: (clonedDoc) => {
-                // 1. 移除 ocr-text-warp transform
+                // 移除 ocr-text-warp transform（防止 html2canvas 座標矩陣偏移）
                 clonedDoc.querySelectorAll('.ocr-text-warp').forEach(el => {
                   el.style.transform = 'none';
                 });
-                // 2. 移除 line-numbers plugin 注入的 padding 和 span
-                clonedDoc.querySelectorAll('pre.line-numbers').forEach(pre => {
-                  pre.classList.remove('line-numbers');
-                  pre.querySelectorAll('.line-numbers-rows').forEach(r => r.remove());
-                  pre.style.paddingLeft = '';
-                });
-                // 3. 把所有 mark 元素的背景色全部移除（改由精準 div 負責）
+                // 移除 mark 背景色：html2canvas 只渲染文字，
+                // 高亮色塊改由下方 Canvas 2D API 精準繪製
                 clonedDoc.querySelectorAll('.code-hl-token').forEach(el => {
                   el.style.setProperty('background', 'none', 'important');
-                  el.style.setProperty('display', 'inline', 'important');
-                  el.style.removeProperty('font-weight');
+                  el.style.setProperty('box-shadow', 'none', 'important');
                 });
-                // 4. 在 carbon-target 內注入絕對定位的高亮 div，座標來自真實 DOM 測量
-                if (hlPositions.length > 0) {
-                  const clonedTarget = clonedDoc.getElementById('carbon-target');
-                  if (clonedTarget) {
-                    // 確保 carbon-target 是相對定位基準
-                    clonedTarget.style.position = 'relative';
-                    hlPositions.forEach(pos => {
-                      const hl = clonedDoc.createElement('div');
-                      hl.setAttribute('aria-hidden', 'true');
-                      hl.style.cssText =
-                        'position:absolute;' +
-                        'top:'    + (pos.top    - 2) + 'px;' +
-                        'left:'   + (pos.left   - 2) + 'px;' +
-                        'width:'  + (pos.width  + 4) + 'px;' +
-                        'height:' + (pos.height + 4) + 'px;' +
-                        'background:rgba(251,191,36,0.55);' +
-                        'border-radius:3px;' +
-                        'pointer-events:none;' +
-                        'z-index:0;';
-                      // 插入到最前面，確保文字層在上方
-                      clonedTarget.insertBefore(hl, clonedTarget.firstChild);
-                    });
-                  }
-                }
               }
             });
+
+            // ★ 關鍵步驟：html2canvas 渲染完畢後，直接把高亮框畫到 Canvas 上
+            //   scale:2 → 所有 CSS px 乘以 2 才是 canvas 座標
+            if (hlPositions.length > 0) {
+              const ctx = rawCanvas.getContext('2d');
+              const sc = 2;
+              ctx.save();
+              ctx.fillStyle = 'rgba(251, 191, 36, 0.55)';
+              hlPositions.forEach(pos => {
+                const x = Math.round((pos.left   - 3) * sc);
+                const y = Math.round((pos.top    - 2) * sc);
+                const w = Math.round((pos.width  + 6) * sc);
+                const h = Math.round((pos.height + 4) * sc);
+                const rr = 3 * sc;  // border-radius: 3px
+                ctx.beginPath();
+                ctx.moveTo(x + rr, y);
+                ctx.lineTo(x + w - rr, y);
+                ctx.quadraticCurveTo(x + w, y,     x + w, y + rr);
+                ctx.lineTo(x + w, y + h - rr);
+                ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+                ctx.lineTo(x + rr, y + h);
+                ctx.quadraticCurveTo(x,     y + h, x, y + h - rr);
+                ctx.lineTo(x, y + rr);
+                ctx.quadraticCurveTo(x, y,         x + rr, y);
+                ctx.closePath();
+                ctx.fill();
+              });
+              ctx.restore();
+            }
 
             // 智能壓縮與縮放最佳化
             const base64Data = compressCanvas(rawCanvas, 1350, 0.88);
