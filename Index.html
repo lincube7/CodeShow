@@ -17,8 +17,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-  <!-- Prism.js CDN 基底網址 (懶載入，老師開啟上傳彈窗時才注入) -->
-  <script>window.__PRISM_CDN__ = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0';</script>
+  <!-- Prism.js CDN 基底網址 (懶載入，老師開啟上傳彈窗時才注入；manual=true 防止自動覆蓋) -->
+  <script>
+    window.__PRISM_CDN__ = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0';
+    window.Prism = window.Prism || {};
+    window.Prism.manual = true;
+  </script>
 
   <style>
     body {
@@ -40,26 +44,36 @@
       user-select: none;
     }
     /* Carbon 預覽區塊樣式微調 */
-    #carbon-target pre[class*="language-"] {
-      margin: 0;
-      padding: 1.25rem 1rem 1.25rem 3.8em;
-      background: transparent;
-      border: none;
-      box-shadow: none;
-      position: relative;
+    #carbon-target pre.line-numbers,
+    #carbon-target pre {
+      margin: 0 !important;
+      padding: 1.25rem 1rem 1.25rem 3.8em !important;
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      position: relative !important;
     }
-    /* 行號：由 JS textContent 顯示數字，停用 Prism 預設的 CSS counter */
-    .line-numbers .line-numbers-rows > span::before {
+    /* 行號容器樣式：由 JS textContent 顯示數字，不依賴 Prism CSS counter */
+    #carbon-target .line-numbers-rows {
+      position: absolute !important;
+      pointer-events: none !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 3em !important;
+      letter-spacing: -1px;
+      border-right: 1px solid rgba(255, 255, 255, 0.15) !important;
+      user-select: none !important;
+      padding-top: 1.25rem !important;
+    }
+    #carbon-target .line-numbers-rows > span {
+      display: block !important;
+      color: rgba(255, 255, 255, 0.45) !important;
+      text-align: right !important;
+      padding-right: 0.6em !important;
+      counter-increment: none !important;
+    }
+    #carbon-target .line-numbers-rows > span::before {
       content: none !important;
-    }
-    .line-numbers .line-numbers-rows {
-      border-right: 1px solid rgba(255, 255, 255, 0.15);
-    }
-    .line-numbers .line-numbers-rows > span {
-      display: block;
-      color: rgba(255, 255, 255, 0.45);
-      text-align: right;
-      padding-right: 0.6em;
     }
 
     /* 溫潤琥珀金重點螢光標記 — display:inline 讓 html2canvas 能正確計算背景 Y 座標 */
@@ -1804,7 +1818,7 @@
 
                     <!-- 真正的程式碼高亮主體 (層級 z-index: 10，強力防護下支援微扭曲 text-warp) -->
                     <div class="p-2 relative z-10" :class="form.ocrProtection === 'strong' ? 'ocr-text-warp' : ''">
-                      <pre class="line-numbers text-xs"><code ref="previewCode" :class="['language-' + form.language, form.ocrProtection === 'strong' ? 'ocr-chromatic-strong' : (form.ocrProtection === 'standard' ? 'ocr-chromatic-standard' : '')]">{{ form.code || '// 尚未輸入程式碼' }}</code></pre>
+                      <pre class="line-numbers text-xs" :class="'language-' + form.language" style="position: relative; padding-left: 3.8em;"><span class="line-numbers-rows" aria-hidden="true" style="position: absolute; top: 0; left: 0; width: 3em; border-right: 1px solid rgba(255, 255, 255, 0.15); pointer-events: none; user-select: none; padding-top: 1.25rem;"><span v-for="n in previewLineCount" :key="n" style="display: block; text-align: right; padding-right: 0.6em; color: rgba(255, 255, 255, 0.45); font-size: 100%;">{{ n }}</span></span><code ref="previewCode" :class="['language-' + form.language, form.ocrProtection === 'strong' ? 'ocr-chromatic-strong' : (form.ocrProtection === 'standard' ? 'ocr-chromatic-standard' : '')]"></code></pre>
                     </div>
 
                     <!-- 前置穿透式干擾柵線 (覆蓋在文字最上方 z-index: 20，物理切割字體筆畫) -->
@@ -3218,6 +3232,13 @@ def calculate_sum(n):
     return total
 
 print("Result:", calculate_sum(10))`
+        });
+
+        // 即時預覽行數計算 (響應式驅動，徹底擺脫第三方插件對行號 DOM 的干擾)
+        const previewLineCount = computed(() => {
+          const raw = form.value.code || '';
+          const clean = raw.includes('@@') ? raw.replace(/@@([\s\S]*?)@@/g, '$1') : raw;
+          return (clean || '').split('\n').length;
         });
 
         const previewCode = ref(null);
@@ -7193,15 +7214,16 @@ def __run_with_trace(user_code_str, stdin_str):
             document.head.appendChild(el);
           };
           addLink(`${cdn}/themes/prism-tomorrow.min.css`);
-          addLink(`${cdn}/plugins/line-numbers/prism-line-numbers.min.css`);
           const loadScript = src => new Promise((res, rej) => {
             const s = document.createElement('script');
             s.src = src; s.onload = res; s.onerror = rej;
             document.head.appendChild(s);
           });
           return loadScript(`${cdn}/prism.min.js`)
-            .then(() => loadScript(`${cdn}/plugins/autoloader/prism-autoloader.min.js`))
-            .then(() => loadScript(`${cdn}/plugins/line-numbers/prism-line-numbers.min.js`))
+            .then(() => loadScript(`${cdn}/components/prism-clike.min.js`))
+            .then(() => loadScript(`${cdn}/components/prism-c.min.js`))
+            .then(() => loadScript(`${cdn}/components/prism-cpp.min.js`))
+            .then(() => loadScript(`${cdn}/components/prism-python.min.js`))
             .then(() => { prismLoaded = true; });
         };
 
@@ -7241,47 +7263,25 @@ def __run_with_trace(user_code_str, stdin_str):
         };
 
         const updateHighlight = () => {
-          nextTick(() => {
-            if (previewCode.value && window.Prism) {
-              const rawCode = form.value.code || '';
-              const hasMarks = rawCode.includes('@@');
-              if (hasMarks) {
-                const markedCode = rawCode.replace(/@@([\s\S]*?)@@/g, '\uFFFD$1\uFFFD');
-                previewCode.value.textContent = markedCode;
-              }
-              Prism.highlightElement(previewCode.value);
-              // Prism 輸出後，把 \uFFFD...\uFFFD 換回 <mark>
-              if (hasMarks && previewCode.value.innerHTML.includes('\uFFFD')) {
-                previewCode.value.innerHTML = previewCode.value.innerHTML.replace(
-                  /\uFFFD([\s\S]*?)\uFFFD/g,
-                  '<mark class="code-hl-token">$1</mark>'
-                );
-              }
-              // ★ 手動建立行號（不依賴 Prism line-numbers plugin）
-              // Prism line-numbers plugin 在 highlightElement(<code>) 時不一定會觸發
-              const preEl = previewCode.value.parentElement; // <pre>
-              if (preEl) {
-                // 移除舊的行號容器
-                const oldRows = preEl.querySelector('.line-numbers-rows');
-                if (oldRows) oldRows.remove();
-                // 計算行數
-                const codeText = rawCode.includes('@@')
-                  ? rawCode.replace(/@@([\s\S]*?)@@/g, '$1')
-                  : rawCode;
-                const lineCount = (codeText || '').split('\n').length;
-                // 建立行號容器
-                const rowsSpan = document.createElement('span');
-                rowsSpan.setAttribute('aria-hidden', 'true');
-                rowsSpan.className = 'line-numbers-rows';
-                for (let i = 0; i < lineCount; i++) {
-                  const span = document.createElement('span');
-                  span.textContent = String(i + 1);
-                  rowsSpan.appendChild(span);
-                }
-                preEl.appendChild(rowsSpan);
-              }
-            }
-          });
+          if (!previewCode.value) return;
+          const rawCode = form.value.code || '// 尚未輸入程式碼';
+          const hasMarks = rawCode.includes('@@');
+          if (hasMarks) {
+            const markedCode = rawCode.replace(/@@([\s\S]*?)@@/g, '\uFFFD$1\uFFFD');
+            previewCode.value.textContent = markedCode;
+          } else {
+            previewCode.value.textContent = rawCode;
+          }
+          if (window.Prism) {
+            Prism.highlightElement(previewCode.value);
+          }
+          // Prism 輸出後，把 \uFFFD...\uFFFD 換回 <mark>
+          if (hasMarks && previewCode.value.innerHTML.includes('\uFFFD')) {
+            previewCode.value.innerHTML = previewCode.value.innerHTML.replace(
+              /\uFFFD([\s\S]*?)\uFFFD/g,
+              '<mark class="code-hl-token">$1</mark>'
+            );
+          }
         };
 
         // 程式碼貼上防抖 (避免頻繁觸發 Prism 重繪與噪點重繪)
@@ -7342,6 +7342,8 @@ def __run_with_trace(user_code_str, stdin_str):
               drawDynamicNoise();
             }
             await nextTick();
+            updateHighlight();
+            await nextTick();
 
             if (document.fonts && document.fonts.ready) {
               await document.fonts.ready;
@@ -7350,17 +7352,40 @@ def __run_with_trace(user_code_str, stdin_str):
             const targetEl = document.getElementById("carbon-target");
             await new Promise(r => requestAnimationFrame(r));
 
-            // ★★★ 最終方案：Canvas 2D 繪製高亮 + 手動行號 ★★★
-            // html2canvas 對 inline 元素的 background+padding 渲染有已知 Y 偏移 bug，
-            // 無論用 inline / inline-block / 替換 span 都無法完美修正。
-            // 解法：在 onclone 中記錄 mark 座標，移除 mark 背景，讓 html2canvas 只渲染文字，
-            // 渲染完成後用 Canvas 2D API 在正確位置繪製琥珀色底色塊。
+            // ★★★ 最終極致方案：真實 DOM 精確測量 + Canvas 2D 繪製高亮 + 手動行號 ★★★
             const rawCode = form.value.code || '';
             const lineCount = rawCode.replace(/@@([\s\S]*?)@@/g, '$1').split('\n').length;
-            const hlRects = []; // 收集高亮區域座標
 
+            // 1. 若有 ocr-text-warp，測量前先暫時移除，避免微小旋轉/skew 影響水平矩形座標
+            const warpEl = targetEl.querySelector('.ocr-text-warp');
+            if (warpEl) warpEl.classList.remove('ocr-text-warp');
+
+            // 2. 獲取 targetEl 在螢幕上的真實邊界
+            const targetRect = targetEl.getBoundingClientRect();
+
+            // 3. 獲取所有 mark 標記的精確相對位置 (支援單行與多行 getClientRects)
+            const hlBoxes = [];
+            targetEl.querySelectorAll('.code-hl-token').forEach(mark => {
+              const rects = mark.getClientRects();
+              for (let i = 0; i < rects.length; i++) {
+                const r = rects[i];
+                if (r.width > 0 && r.height > 0) {
+                  hlBoxes.push({
+                    left: r.left - targetRect.left,
+                    top: r.top - targetRect.top,
+                    width: r.width,
+                    height: r.height
+                  });
+                }
+              }
+            });
+
+            // 4. 測量完畢，立刻加回 ocr-text-warp
+            if (warpEl) warpEl.classList.add('ocr-text-warp');
+
+            const canvasScale = 2;
             const rawCanvas = await html2canvas(targetEl, {
-              scale: 2,
+              scale: canvasScale,
               useCORS: true,
               backgroundColor: null,
               scrollX: 0,
@@ -7372,33 +7397,12 @@ def __run_with_trace(user_code_str, stdin_str):
                   el.classList.remove('ocr-text-warp');
                 });
 
-                // --- 2. 收集高亮位置 & 移除背景（由 Canvas 2D 後繪）---
-                const clonedTarget = clonedDoc.getElementById('carbon-target');
-                if (clonedTarget) {
-                  clonedTarget.querySelectorAll('.code-hl-token').forEach(mark => {
-                    // 先設 inline-block 讓 offsetWidth/Height 有值（inline 元素可能回傳 0）
-                    mark.style.setProperty('display', 'inline-block', 'important');
-                    mark.style.setProperty('vertical-align', 'baseline', 'important');
-                    // 用 offsetTop/Left 相對於 offsetParent 鏈算出相對於 carbon-target 的座標
-                    let top = 0, left = 0;
-                    let el = mark;
-                    while (el && el !== clonedTarget) {
-                      top += el.offsetTop || 0;
-                      left += el.offsetLeft || 0;
-                      el = el.offsetParent;
-                    }
-                    hlRects.push({
-                      top: top,
-                      left: left,
-                      width: mark.offsetWidth,
-                      height: mark.offsetHeight
-                    });
-                    // 移除背景，只留文字讓 html2canvas 渲染
-                    mark.style.setProperty('background', 'transparent', 'important');
-                    mark.style.setProperty('padding', '0', 'important');
-                    mark.style.setProperty('margin', '0', 'important');
-                  });
-                }
+                // --- 2. 替換 mark 為純 span，防止 html2canvas 畫出偏位的內建背景 ---
+                clonedDoc.querySelectorAll('.code-hl-token').forEach(mark => {
+                  const span = clonedDoc.createElement('span');
+                  span.innerHTML = mark.innerHTML;
+                  mark.parentNode.replaceChild(span, mark);
+                });
 
                 // --- 3. 解除 overflow:hidden 裁切（讓行號可見）---
                 const codeContainer = clonedDoc.querySelector('#carbon-target .relative.overflow-hidden');
@@ -7406,19 +7410,15 @@ def __run_with_trace(user_code_str, stdin_str):
                   codeContainer.style.overflow = 'visible';
                 }
 
-                // --- 4. 確保行號可見（clone 中的行號由 Prism CSS + textContent 驅動）---
+                // --- 4. 確保行號可見 ---
                 const clonedPre = clonedDoc.querySelector('#carbon-target pre');
                 if (clonedPre) {
-                  // 確保 pre 有 position:relative（行號定位的錨點）
                   clonedPre.style.position = 'relative';
-                  // 確保 padding-left 足夠容納行號
                   clonedPre.style.paddingLeft = '3.8em';
 
-                  // 移除可能殘留的 Prism 自動產生的空行號
                   const oldRows = clonedPre.querySelector('.line-numbers-rows');
                   if (oldRows) oldRows.remove();
 
-                  // 建立行號容器（全用 inline style，不依賴任何外部 CSS）
                   const rowsSpan = clonedDoc.createElement('span');
                   rowsSpan.setAttribute('aria-hidden', 'true');
                   rowsSpan.style.cssText =
@@ -7440,36 +7440,32 @@ def __run_with_trace(user_code_str, stdin_str):
               }
             });
 
-            // ★★★ html2canvas 渲染完成後，用 Canvas 2D 繪製高亮底色塊 ★★★
-            // 直接在 canvas 上疊加半透明琥珀色塊，文字仍然清晰可見
-            const canvasScale = 2; // 與 html2canvas scale 一致
-            if (hlRects.length > 0) {
-              const ctx = rawCanvas.getContext('2d');
-              ctx.fillStyle = 'rgba(251,191,36,0.55)';
-              hlRects.forEach(r => {
-                if (r.width > 0 && r.height > 0) {
-                  const x = r.left * canvasScale;
-                  const y = r.top * canvasScale;
-                  const w = r.width * canvasScale;
-                  const h = r.height * canvasScale;
-                  const radius = 3 * canvasScale;
-                  ctx.beginPath();
-                  ctx.moveTo(x + radius, y);
-                  ctx.lineTo(x + w - radius, y);
-                  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
-                  ctx.lineTo(x + w, y + h - radius);
-                  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
-                  ctx.lineTo(x + radius, y + h);
-                  ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
-                  ctx.lineTo(x, y + radius);
-                  ctx.quadraticCurveTo(x, y, x + radius, y);
-                  ctx.closePath();
-                  ctx.fill();
+            // ★★★ 建立 finalCanvas，繪製底圖並疊加 Canvas 2D 精準琥珀金高亮色塊 ★★★
+            const finalCanvas = document.createElement('canvas');
+            finalCanvas.width = rawCanvas.width;
+            finalCanvas.height = rawCanvas.height;
+            const fCtx = finalCanvas.getContext('2d');
+            fCtx.drawImage(rawCanvas, 0, 0);
+
+            if (hlBoxes.length > 0) {
+              fCtx.fillStyle = 'rgba(251, 191, 36, 0.55)';
+              hlBoxes.forEach(b => {
+                const x = (b.left - 2) * canvasScale;
+                const y = (b.top + 8.5) * canvasScale;
+                const w = (b.width + 4) * canvasScale;
+                const h = b.height * canvasScale;
+                const r = 3 * canvasScale;
+                if (fCtx.roundRect) {
+                  fCtx.beginPath();
+                  fCtx.roundRect(x, y, w, h, r);
+                  fCtx.fill();
+                } else {
+                  fCtx.fillRect(x, y, w, h);
                 }
               });
             }
 
-            const base64Data = compressCanvas(rawCanvas, 1350, 0.88);
+            const base64Data = compressCanvas(finalCanvas, 1350, 0.88);
 
             if (typeof google !== 'undefined' && google.script && google.script.run) {
               google.script.run
@@ -7956,6 +7952,7 @@ def __run_with_trace(user_code_str, stdin_str):
           toggleChapterMode,
           changeLang,
           updateHighlight,
+          previewLineCount,
           submitProblem,
           confirmDelete,
           confirmDeleteChapter,
