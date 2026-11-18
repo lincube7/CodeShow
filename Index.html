@@ -7337,38 +7337,45 @@ def __run_with_trace(user_code_str, stdin_str):
 
             const targetEl = document.getElementById("carbon-target");
 
-            // ★ 注意：uploading=true 後 Vue re-render，
-            //   但因 form.code 未變，vdom diff 不會碰 <code> 的 innerHTML，
-            //   所以 updateHighlight() 注入的 marks 仍然存在。
-            //   直接測量即可；若真的找不到才才備援重新注入。
             await new Promise(r => requestAnimationFrame(r)); // 確保 layout committed
 
-            // ★ 關鍵改進：改用 overlay div 方法替代 Canvas 2D API
-            //   html2canvas 能可靠渲染絕對定位的 div，
-            //   但對 inline element 背景色計算有偏移 bug。
-
-            // 測量 mark 位置（相對於 codeWrapper，因為 overlay 要插進去）
+            // ★★ 關鍵修復：ocr-text-warp 有 rotate/skewX transform
+            //   若在 transform 存在時量測 getBoundingClientRect，
+            //   onclone 移除 transform 後 overlay div 座標就會錯位（上移）。
+            //   解法：量測前先暫時移除 codeWrapper 的 transform，量完後恢復。
             const codeWrapper = targetEl.querySelector('.code-pad-left');
+            const savedTransform = codeWrapper ? codeWrapper.style.transform : '';
+            const savedTransformOrigin = codeWrapper ? codeWrapper.style.transformOrigin : '';
+            if (codeWrapper && codeWrapper.classList.contains('ocr-text-warp')) {
+              codeWrapper.style.transform = 'none';
+              codeWrapper.style.transformOrigin = '';
+              // 強制重新 layout
+              void codeWrapper.offsetHeight;
+            }
+
+            // 測量 mark 位置（相對於 codeWrapper，此時無 transform）
             const wrapperRect = codeWrapper
               ? codeWrapper.getBoundingClientRect()
               : targetEl.getBoundingClientRect();
 
             const hlPositions = [];
-            targetEl.querySelectorAll('.code-hl-token').forEach(mark => {
-              const r = mark.getBoundingClientRect();
-              if (r.width > 0 && r.height > 0) {
-                hlPositions.push({
-                  top:    r.top    - wrapperRect.top,
-                  left:   r.left   - wrapperRect.left,
-                  width:  r.width,
-                  height: r.height
-                });
-              }
-            });
+            const measureIntoPositions = () => {
+              targetEl.querySelectorAll('.code-hl-token').forEach(mark => {
+                const r = mark.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0) {
+                  hlPositions.push({
+                    top:    r.top    - wrapperRect.top,
+                    left:   r.left   - wrapperRect.left,
+                    width:  r.width,
+                    height: r.height
+                  });
+                }
+              });
+            };
+            measureIntoPositions();
 
-            // 備援：若 marks 消失（\uFFFD 未被正確替換），重新執行一次 updateHighlight 後再測量
+            // 備援：若 marks 消失，用 \uFFFD 佔位符重新注入後再測量
             if (hlPositions.length === 0 && form.value.code.includes('@@')) {
-              // 直接呼叫已修正的 updateHighlight（使用 \uFFFD 佔位符，不怕 Prism 拆分）
               if (previewCode.value && window.Prism) {
                 const rawCode = form.value.code || '';
                 const markedCode = rawCode.replace(/@@([\s\S]*?)@@/g, '\uFFFD$1\uFFFD');
@@ -7381,22 +7388,18 @@ def __run_with_trace(user_code_str, stdin_str):
                   );
                 }
                 await new Promise(r => requestAnimationFrame(r));
-                // 重新測量
-                targetEl.querySelectorAll('.code-hl-token').forEach(mark => {
-                  const r = mark.getBoundingClientRect();
-                  if (r.width > 0 && r.height > 0) {
-                    hlPositions.push({
-                      top:    r.top    - wrapperRect.top,
-                      left:   r.left   - wrapperRect.left,
-                      width:  r.width,
-                      height: r.height
-                    });
-                  }
-                });
+                measureIntoPositions();
               }
             }
 
+            // 恢復 codeWrapper transform（恢復視覺效果）
+            if (codeWrapper && codeWrapper.classList.contains('ocr-text-warp')) {
+              codeWrapper.style.transform = savedTransform;
+              codeWrapper.style.transformOrigin = savedTransformOrigin;
+            }
+
             // 在 codeWrapper 中注入 overlay div（在 html2canvas 之前！）
+            // 位置是在「無 transform」空間量測的，與 onclone 移除 transform 後一致
             const overlayDivs = [];
             if (codeWrapper && hlPositions.length > 0) {
               hlPositions.forEach(pos => {
@@ -7422,9 +7425,10 @@ def __run_with_trace(user_code_str, stdin_str):
               scrollY: 0,
               logging: false,
               onclone: (clonedDoc) => {
-                // 1. 移除 ocr-text-warp transform（防止 html2canvas 座標矩陣偏移）
+                // 1. 移除 ocr-text-warp transform（與量測時一致，overlay 位置正確）
                 clonedDoc.querySelectorAll('.ocr-text-warp').forEach(el => {
                   el.style.transform = 'none';
+                  el.style.transformOrigin = '';
                 });
                 // 2. 移除 <mark> 背景色（高亮框已由 overlay div 負責）
                 clonedDoc.querySelectorAll('.code-hl-token').forEach(el => {
@@ -7432,12 +7436,23 @@ def __run_with_trace(user_code_str, stdin_str):
                   el.style.setProperty('box-shadow', 'none', 'important');
                 });
                 // 3. ★ 行號修復：html2canvas 不支援 CSS counter()
-                clonedDoc.querySelectorAll('.line-numbers-rows > span').forEach((span, i) => {
-                  span.style.cssText =
-                    'display:block;text-align:right;padding-right:0.6em;' +
-                    'color:rgba(255,255,255,0.45);font-size:inherit;line-height:inherit;';
-                  span.textContent = String(i + 1);
-                });
+                //    把數字文字直接寫入 span 本體（取代 ::before pseudo-element）
+                //    同時確保 .line-numbers-rows 本身可見
+                const lineRows = clonedDoc.querySelector('.line-numbers-rows');
+                if (lineRows) {
+                  lineRows.style.cssText =
+                    'position:absolute;top:0;left:-3.8em;width:3em;' +
+                    'border-right:1px solid rgba(255,255,255,0.15);' +
+                    'pointer-events:none;user-select:none;';
+                  const lineSpans = lineRows.querySelectorAll('span');
+                  lineSpans.forEach((span, i) => {
+                    span.style.cssText =
+                      'display:block;text-align:right;padding-right:0.6em;' +
+                      'color:rgba(255,255,255,0.45);line-height:inherit;';
+                    // 清空 ::before 的 counter 文字，改為直接 textContent
+                    span.textContent = String(i + 1);
+                  });
+                }
               }
             });
 
