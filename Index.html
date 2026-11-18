@@ -17,12 +17,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-  <!-- Prism.js CDN 基底網址 (懶載入，老師開啟上傳彈窗時才注入；manual=true 防止自動覆蓋) -->
-  <script>
-    window.__PRISM_CDN__ = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0';
-    window.Prism = window.Prism || {};
-    window.Prism.manual = true;
-  </script>
+  <!-- Prism.js CDN 基底網址 (懶載入，老師開啟上傳彈窗時才注入) -->
+  <script>window.__PRISM_CDN__ = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0';</script>
 
   <style>
     body {
@@ -7206,8 +7202,10 @@ def __run_with_trace(user_code_str, stdin_str):
         // Prism.js 懶載入 (僅老師開啟上傳彈窗時才注入，學生完全無需等待)
         let prismLoaded = false;
         const ensurePrismLoaded = () => {
-          if (prismLoaded || window.Prism) { prismLoaded = true; return Promise.resolve(); }
-          const cdn = window.__PRISM_CDN__;
+          if (prismLoaded && window.Prism && typeof window.Prism.highlightElement === 'function') {
+            return Promise.resolve();
+          }
+          const cdn = window.__PRISM_CDN__ || 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0';
           const addLink = href => {
             const el = document.createElement('link');
             el.rel = 'stylesheet'; el.href = href;
@@ -7220,11 +7218,17 @@ def __run_with_trace(user_code_str, stdin_str):
             document.head.appendChild(s);
           });
           return loadScript(`${cdn}/prism.min.js`)
-            .then(() => loadScript(`${cdn}/components/prism-clike.min.js`))
+            .then(() => {
+              if (window.Prism) window.Prism.manual = true;
+              return loadScript(`${cdn}/components/prism-clike.min.js`);
+            })
             .then(() => loadScript(`${cdn}/components/prism-c.min.js`))
             .then(() => loadScript(`${cdn}/components/prism-cpp.min.js`))
             .then(() => loadScript(`${cdn}/components/prism-python.min.js`))
-            .then(() => { prismLoaded = true; });
+            .then(() => {
+              prismLoaded = true;
+              if (window.Prism) window.Prism.manual = true;
+            });
         };
 
         // 上傳彈窗開啟 (背景預先預熱加載 html2canvas 與 Prism.js)
@@ -7266,15 +7270,17 @@ def __run_with_trace(user_code_str, stdin_str):
           if (!previewCode.value) return;
           const rawCode = form.value.code || '// 尚未輸入程式碼';
           const hasMarks = rawCode.includes('@@');
+          if (!window.Prism || typeof window.Prism.highlightElement !== 'function') {
+            previewCode.value.textContent = rawCode;
+            return;
+          }
           if (hasMarks) {
             const markedCode = rawCode.replace(/@@([\s\S]*?)@@/g, '\uFFFD$1\uFFFD');
             previewCode.value.textContent = markedCode;
           } else {
             previewCode.value.textContent = rawCode;
           }
-          if (window.Prism) {
-            Prism.highlightElement(previewCode.value);
-          }
+          Prism.highlightElement(previewCode.value);
           // Prism 輸出後，把 \uFFFD...\uFFFD 換回 <mark>
           if (hasMarks && previewCode.value.innerHTML.includes('\uFFFD')) {
             previewCode.value.innerHTML = previewCode.value.innerHTML.replace(
@@ -7289,8 +7295,10 @@ def __run_with_trace(user_code_str, stdin_str):
         const onCodeInput = () => {
           if (codeInputTimer) clearTimeout(codeInputTimer);
           codeInputTimer = setTimeout(() => {
-            updateHighlight();
-            drawDynamicNoise();
+            ensurePrismLoaded().then(() => {
+              updateHighlight();
+              drawDynamicNoise();
+            });
           }, 120);
         };
 
@@ -7337,6 +7345,7 @@ def __run_with_trace(user_code_str, stdin_str):
           uploading.value = true;
           try {
             await ensureHtml2CanvasLoaded();
+            await ensurePrismLoaded();
 
             if (form.value.ocrProtection === 'strong') {
               drawDynamicNoise();
