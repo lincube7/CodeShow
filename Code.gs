@@ -687,16 +687,18 @@ function batchShowAllProblems(course) {
 }
 
 /**
- * 老師修正題目題號 (Inline 就地編輯)
+ * 老師修正題目資訊 (題號 與/或 所屬章節)
  * @param {string} course 課程名稱
- * @param {string} oldProblemNo 舊題號
+ * @param {string} oldProblemNo 原始題號
  * @param {string} newProblemNo 新題號
+ * @param {string} newChapter 新章節名稱
  */
-function renameProblemNo(course, oldProblemNo, newProblemNo) {
+function updateProblemInfo(course, oldProblemNo, newProblemNo, newChapter) {
   assertTeacher();
   course = (course || "").trim();
   oldProblemNo = (oldProblemNo || "").trim();
   newProblemNo = (newProblemNo || "").trim();
+  newChapter = (newChapter || "").trim();
 
   if (!course || !oldProblemNo) {
     throw new Error("課程與原始題號不可為空！");
@@ -704,8 +706,8 @@ function renameProblemNo(course, oldProblemNo, newProblemNo) {
   if (!newProblemNo) {
     throw new Error("新題號不可為空！");
   }
-  if (oldProblemNo === newProblemNo) {
-    return { success: true, course: course, oldProblemNo: oldProblemNo, newProblemNo: newProblemNo, unchanged: true };
+  if (!newChapter) {
+    throw new Error("章節名稱不可為空！");
   }
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -714,34 +716,55 @@ function renameProblemNo(course, oldProblemNo, newProblemNo) {
 
   var data = sheet.getDataRange().getValues();
   var targetRowIndex = -1;
-  var targetChapter = "";
+  var oldChapter = "";
   var targetFileId = "";
 
-  // 檢查同課程下新題號是否已存在，並尋找原始題號列
+  // 檢查同課程下新題號是否已存在 (若有改題號)，並尋找原始題號列
   for (var i = 1; i < data.length; i++) {
     var rCourse = data[i][0] ? data[i][0].toString().trim() : "";
+    var rChapter = data[i][1] ? data[i][1].toString().trim() : "";
     var rProbNo = data[i][2] ? data[i][2].toString().trim() : "";
 
     if (rCourse === course) {
-      if (rProbNo.toLowerCase() === newProblemNo.toLowerCase()) {
+      if (newProblemNo.toLowerCase() !== oldProblemNo.toLowerCase() && rProbNo.toLowerCase() === newProblemNo.toLowerCase()) {
         throw new Error("題號【" + newProblemNo + "】已存在於此課程中，無法重複使用！");
       }
       if (rProbNo === oldProblemNo) {
         targetRowIndex = i + 1;
-        targetChapter = data[i][1] ? data[i][1].toString().trim() : "未分類章節";
+        oldChapter = rChapter || "未分類章節";
         targetFileId = data[i][3] ? data[i][3].toString().trim() : "";
       }
     }
   }
 
   if (targetRowIndex === -1) {
-    throw new Error("找不到原始題目【" + oldProblemNo + "】，無法修改題號");
+    throw new Error("找不到原始題目【" + oldProblemNo + "】，無法更新資訊");
   }
 
-  // 1. 更新試算表第 3 欄 (C 欄 ProblemNo)
-  sheet.getRange(targetRowIndex, 3).setValue(newProblemNo);
+  var isProblemNoChanged = (oldProblemNo !== newProblemNo);
+  var isChapterChanged = (oldChapter !== newChapter);
 
-  // 2. 若 Google Drive 檔案存在，同步重命名檔案
+  if (!isProblemNoChanged && !isChapterChanged) {
+    return {
+      success: true,
+      course: course,
+      oldProblemNo: oldProblemNo,
+      newProblemNo: newProblemNo,
+      oldChapter: oldChapter,
+      newChapter: newChapter,
+      unchanged: true
+    };
+  }
+
+  // 1. 更新試算表：第 2 欄 (B 欄 Chapter) 與 第 3 欄 (C 欄 ProblemNo)
+  if (isChapterChanged) {
+    sheet.getRange(targetRowIndex, 2).setValue(newChapter);
+  }
+  if (isProblemNoChanged) {
+    sheet.getRange(targetRowIndex, 3).setValue(newProblemNo);
+  }
+
+  // 2. 若 Google Drive 檔案存在，依 course_chapter_problemNo 格式同步重命名檔案
   if (targetFileId) {
     try {
       var file = DriveApp.getFileById(targetFileId);
@@ -751,7 +774,7 @@ function renameProblemNo(course, oldProblemNo, newProblemNo) {
       if (dotIdx !== -1) {
         ext = oldName.substring(dotIdx);
       }
-      var newFileName = course + "_" + targetChapter + "_" + newProblemNo + ext;
+      var newFileName = course + "_" + newChapter + "_" + newProblemNo + ext;
       file.setName(newFileName);
     } catch (e) {
       Logger.log("重新命名 Drive 檔案提示: " + e.message);
@@ -764,8 +787,31 @@ function renameProblemNo(course, oldProblemNo, newProblemNo) {
     success: true,
     course: course,
     oldProblemNo: oldProblemNo,
-    newProblemNo: newProblemNo
+    newProblemNo: newProblemNo,
+    oldChapter: oldChapter,
+    newChapter: newChapter,
+    isProblemNoChanged: isProblemNoChanged,
+    isChapterChanged: isChapterChanged
   };
+}
+
+/**
+ * 老師修正題目題號 (相容舊版介面)
+ */
+function renameProblemNo(course, oldProblemNo, newProblemNo) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_PROBLEMS);
+  var currChapter = "";
+  if (sheet) {
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] == course && data[i][2] == oldProblemNo) {
+        currChapter = data[i][1];
+        break;
+      }
+    }
+  }
+  return updateProblemInfo(course, oldProblemNo, newProblemNo, currChapter || "未分類章節");
 }
 
 // ==================== 遠端 GCC 編譯代理 (Godbolt/Compiler Explorer API) ====================

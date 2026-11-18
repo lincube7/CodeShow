@@ -542,67 +542,34 @@
               @click="openImageModal(prob)">
               
               <div :class="displayDensity === 'compact' ? 'flex flex-col gap-1 mb-2' : 'flex items-center justify-between gap-1 mb-2'">
-                <!-- 左側：題號區 (老師模式：點擊題號標籤本身進入就地編輯，無需額外按鈕) -->
+                <!-- 左側：題號區 -->
                 <div :class="displayDensity === 'compact' ? 'flex items-center gap-1 w-full' : 'flex items-center gap-1 min-w-0 flex-1'">
-                  <!-- 編輯中狀態 -->
-                  <div 
-                    v-if="editingProblemKey === (prob.course + '_' + prob.problemNo)" 
-                    class="flex items-center gap-1 w-full" 
-                    @click.stop>
-                    <input 
-                      :ref="el => { if (el) editProblemInputRef = el; }"
-                      type="text" 
-                      v-model="editingProblemInputVal"
-                      @click.stop
-                      @keydown.enter.prevent="saveEditedProblemNo(prob)"
-                      @keydown.esc.prevent="cancelEditProblemNo"
-                      class="flex-1 min-w-0 px-1.5 py-0.5 font-mono text-xs font-bold rounded bg-slate-900 border border-amber-400 text-amber-200 focus:outline-none focus:ring-1 focus:ring-amber-400 shadow-sm"
-                      placeholder="新題號" />
-                    <button 
-                      type="button"
-                      @click.stop="saveEditedProblemNo(prob)"
-                      title="確認 (Enter)"
-                      class="w-6 h-6 flex items-center justify-center rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow transition active:scale-95 shrink-0">
-                      ✓
-                    </button>
-                    <button 
-                      type="button"
-                      @click.stop="cancelEditProblemNo"
-                      title="取消 (Esc)"
-                      class="w-6 h-6 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white text-xs font-bold border border-slate-600 transition active:scale-95 shrink-0">
-                      ✕
-                    </button>
-                  </div>
+                  <!-- 題號標籤 -->
+                  <span 
+                    class="font-mono font-bold px-2 py-0.5 rounded shrink-0"
+                    :class="[
+                      displayDensity === 'compact' ? 'text-xs' : 'text-sm',
+                      prob.isHidden
+                        ? 'bg-red-500/15 text-red-300 border border-red-500/30'
+                        : 'bg-blue-500/15 text-blue-300 border border-blue-500/30'
+                    ]"
+                    v-html="getHighlightedText(prob.problemNo, searchQuery)">
+                  </span>
 
-                  <!-- 正常檢視狀態 -->
-                  <template v-else>
-                    <!-- 題號標籤 -->
-                    <span 
-                      class="font-mono font-bold px-2 py-0.5 rounded shrink-0"
-                      :class="[
-                        displayDensity === 'compact' ? 'text-xs' : 'text-sm',
-                        prob.isHidden
-                          ? 'bg-red-500/15 text-red-300 border border-red-500/30'
-                          : 'bg-blue-500/15 text-blue-300 border border-blue-500/30'
-                      ]"
-                      v-html="getHighlightedText(prob.problemNo, searchQuery)">
-                    </span>
+                  <!-- 老師模式：✏️ 編輯題目資訊（題號與所屬章節） -->
+                  <button
+                    v-if="userInfo.isTeacher"
+                    type="button"
+                    @click.stop="openEditProblemModal(prob)"
+                    title="編輯題目資訊 (題號 / 所屬章節)"
+                    class="w-5 h-5 flex items-center justify-center rounded bg-slate-800 hover:bg-amber-600/80 text-slate-400 hover:text-white text-[10px] transition border border-slate-700 shrink-0">
+                    ✏️
+                  </button>
 
-                    <!-- 老師模式：✏ 修改題號按鈕（緊湊/舒適皆顯示，避免誤觸題號） -->
-                    <button
-                      v-if="userInfo.isTeacher"
-                      type="button"
-                      @click.stop="startEditProblemNo(prob)"
-                      title="修改題號"
-                      class="w-5 h-5 flex items-center justify-center rounded bg-slate-800 hover:bg-amber-600/80 text-slate-400 hover:text-white text-[10px] transition border border-slate-700 shrink-0">
-                      ✏️
-                    </button>
-
-                    <!-- 緊湊模式：已隱藏徽章在題號行內 -->
-                    <span v-if="prob.isHidden && displayDensity === 'compact'" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/40 whitespace-nowrap shrink-0">
-                      🙈 已隱藏
-                    </span>
-                  </template>
+                  <!-- 緊湊模式：已隱藏徽章在題號行內 -->
+                  <span v-if="prob.isHidden && displayDensity === 'compact'" class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/40 whitespace-nowrap shrink-0">
+                    🙈 已隱藏
+                  </span>
                 </div>
 
                 <!-- 老師管理按鈕群 (顯示/隱藏切換 + 調序 ◀ / ▶ + 刪除) -->
@@ -1843,6 +1810,112 @@
               <span>{{ uploading ? '產生圖片並上傳中...' : '轉成圖片並發布 🚀' }}</span>
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== 彈窗 2.5：編輯題目資訊 (題號與所屬章節搬移) ==================== -->
+    <div 
+      v-if="showEditProblemModal" 
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
+      <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden animate-content-in">
+        <!-- 標題列 -->
+        <div class="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+          <h3 class="text-sm font-bold text-white flex items-center gap-2">
+            <span>✏️</span> 編輯題目資訊
+          </h3>
+          <button 
+            type="button"
+            @click="closeEditProblemModal" 
+            class="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition">
+            ✕
+          </button>
+        </div>
+
+        <!-- 內容表單區 -->
+        <div class="p-5 space-y-4 text-xs font-sans">
+          <!-- 所屬課程 (唯讀) -->
+          <div>
+            <label class="block text-slate-400 font-medium mb-1 flex items-center gap-1">
+              <span>📚 所屬課程</span>
+              <span class="text-[10px] text-slate-500 font-mono">(固定)</span>
+            </label>
+            <div class="px-3 py-2 bg-slate-950/60 border border-slate-800 rounded-lg text-slate-300 font-medium text-xs flex items-center justify-between">
+              <span>{{ editProblemForm.course }}</span>
+              <span class="text-[10px] text-slate-500 font-mono">🔒</span>
+            </div>
+          </div>
+
+          <!-- 題號 -->
+          <div>
+            <label class="block text-slate-300 font-medium mb-1">
+              題號 (Problem No.)
+            </label>
+            <input 
+              :ref="el => { if (el) editProblemInputRef = el; }"
+              type="text" 
+              v-model="editProblemForm.problemNo"
+              @keydown.enter.prevent="saveProblemInfo"
+              @keydown.esc.prevent="closeEditProblemModal"
+              placeholder="例如：a001 或 01-1"
+              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-amber-200 font-mono font-bold focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 shadow-inner" />
+          </div>
+
+          <!-- 所屬章節 -->
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-slate-300 font-medium">
+                所屬章節 (Chapter)
+              </label>
+              <button 
+                type="button" 
+                @click="toggleEditChapterMode" 
+                class="text-[11px] text-indigo-400 hover:text-indigo-300 transition font-medium">
+                {{ editProblemForm.chapterMode === '__NEW__' ? '選取既有章節 ↩' : '➕ 自訂新章節' }}
+              </button>
+            </div>
+
+            <!-- 下拉選單：列出此課程所有現存章節供搬移 -->
+            <select 
+              v-if="editProblemForm.chapterMode !== '__NEW__' && currentCourseChapters.length > 0"
+              v-model="editProblemForm.selectedChapter" 
+              @change="onEditChapterSelectChange"
+              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+              <option v-for="ch in currentCourseChapters" :key="ch" :value="ch">
+                {{ ch }}
+              </option>
+              <option value="__NEW__">➕ 自訂新章節...</option>
+            </select>
+
+            <!-- 輸入框：自訂新章節名稱 -->
+            <input 
+              v-else
+              type="text" 
+              v-model="editProblemForm.newChapterName" 
+              @keydown.enter.prevent="saveProblemInfo"
+              @keydown.esc.prevent="closeEditProblemModal"
+              placeholder="例如：二、條件判斷"
+              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 shadow-inner" />
+          </div>
+        </div>
+
+        <!-- 底部按鈕區 -->
+        <div class="px-5 py-3.5 border-t border-slate-800/80 bg-slate-950/40 flex items-center justify-end gap-2">
+          <button 
+            type="button"
+            @click="closeEditProblemModal" 
+            :disabled="editProblemSaving"
+            class="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition disabled:opacity-50">
+            取消
+          </button>
+          <button 
+            type="button"
+            @click="saveProblemInfo" 
+            :disabled="editProblemSaving"
+            class="px-4 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs shadow-md shadow-amber-500/20 active:scale-95 transition disabled:opacity-50 flex items-center gap-1">
+            <span v-if="editProblemSaving" class="animate-spin text-xs">⏳</span>
+            <span>{{ editProblemSaving ? '儲存中...' : '儲存修改' }}</span>
+          </button>
         </div>
       </div>
     </div>
@@ -7443,15 +7516,33 @@ def __run_with_trace(user_code_str, stdin_str):
           }
         };
 
-        // 老師修改題號相關狀態 (Inline 就地編輯)
-        const editingProblemKey = ref(null);
-        const editingProblemInputVal = ref('');
+        // 老師修改題目資訊相關狀態 (微型彈窗：題號 ＆ 所屬章節搬移)
+        const showEditProblemModal = ref(false);
+        const editProblemSaving = ref(false);
         const editProblemInputRef = ref(null);
+        const editProblemForm = ref({
+          course: '',
+          originalProblemNo: '',
+          problemNo: '',
+          originalChapter: '',
+          chapterMode: 'select', // 'select' 或 '__NEW__'
+          selectedChapter: '',
+          newChapterName: ''
+        });
 
-        const startEditProblemNo = (prob) => {
+        const openEditProblemModal = (prob) => {
           if (!userInfo.value.isTeacher) return;
-          editingProblemKey.value = (prob.course || '') + '_' + prob.problemNo;
-          editingProblemInputVal.value = prob.problemNo;
+          const currChapter = prob.chapter || '未分類章節';
+          editProblemForm.value = {
+            course: prob.course || '',
+            originalProblemNo: prob.problemNo || '',
+            problemNo: prob.problemNo || '',
+            originalChapter: currChapter,
+            chapterMode: 'select',
+            selectedChapter: currChapter,
+            newChapterName: ''
+          };
+          showEditProblemModal.value = true;
           nextTick(() => {
             if (editProblemInputRef.value) {
               editProblemInputRef.value.focus();
@@ -7460,62 +7551,109 @@ def __run_with_trace(user_code_str, stdin_str):
           });
         };
 
-        const cancelEditProblemNo = () => {
-          editingProblemKey.value = null;
-          editingProblemInputVal.value = '';
+        const closeEditProblemModal = () => {
+          if (editProblemSaving.value) return;
+          showEditProblemModal.value = false;
         };
 
-        const saveEditedProblemNo = (prob) => {
-          if (!userInfo.value.isTeacher) return;
-          const oldNo = prob.problemNo;
-          const newNo = (editingProblemInputVal.value || '').trim();
+        const toggleEditChapterMode = () => {
+          if (editProblemForm.value.chapterMode === '__NEW__') {
+            editProblemForm.value.chapterMode = 'select';
+            if (!editProblemForm.value.selectedChapter && currentCourseChapters.value.length > 0) {
+              editProblemForm.value.selectedChapter = currentCourseChapters.value[0];
+            }
+          } else {
+            editProblemForm.value.chapterMode = '__NEW__';
+          }
+        };
+
+        const onEditChapterSelectChange = () => {
+          if (editProblemForm.value.selectedChapter === '__NEW__') {
+            editProblemForm.value.chapterMode = '__NEW__';
+            editProblemForm.value.newChapterName = '';
+          }
+        };
+
+        const saveProblemInfo = () => {
+          if (!userInfo.value.isTeacher || editProblemSaving.value) return;
+          const form = editProblemForm.value;
+          const course = form.course;
+          const oldNo = form.originalProblemNo;
+          const newNo = (form.problemNo || '').trim();
+          const oldChapter = form.originalChapter;
+          const newChapter = (form.chapterMode === '__NEW__' ? (form.newChapterName || '').trim() : (form.selectedChapter || '').trim());
 
           if (!newNo) {
-            showToast("新題號不可為空！", "error");
+            showToast("題號不可為空！", "error");
             return;
           }
-          if (newNo === oldNo) {
-            cancelEditProblemNo();
+          if (!newChapter) {
+            showToast("章節名稱不可為空！", "error");
             return;
           }
 
-          // 檢查新題號是否已存在於目前課程中 (不分大小寫)
-          const isDuplicate = rawProblems.value.some(p => 
-            p.course === prob.course && 
-            p.problemNo.toLowerCase() === newNo.toLowerCase() &&
-            p.problemNo !== oldNo
-          );
-          if (isDuplicate) {
-            showToast(`題號【${newNo}】已存在於此課程中，無法重複使用！`, "error");
+          const isProbNoChanged = (newNo !== oldNo);
+          const isChapterChanged = (newChapter !== oldChapter);
+
+          if (!isProbNoChanged && !isChapterChanged) {
+            closeEditProblemModal();
             return;
+          }
+
+          // 檢查新題號是否已存在於目前課程中 (若有改題號)
+          if (isProbNoChanged) {
+            const isDuplicate = rawProblems.value.some(p => 
+              p.course === course && 
+              p.problemNo.toLowerCase() === newNo.toLowerCase() &&
+              p.problemNo !== oldNo
+            );
+            if (isDuplicate) {
+              showToast(`題號【${newNo}】已存在於此課程中，無法重複使用！`, "error");
+              return;
+            }
           }
 
           // 樂觀更新前端狀態
-          cancelEditProblemNo();
-          prob.problemNo = newNo;
-          const target = rawProblems.value.find(p => p.course === prob.course && p.problemNo === oldNo);
+          const target = rawProblems.value.find(p => p.course === course && p.problemNo === oldNo);
           if (target) {
             target.problemNo = newNo;
+            target.chapter = newChapter;
+          }
+          if (activeProblem.value && activeProblem.value.course === course && activeProblem.value.problemNo === oldNo) {
+            activeProblem.value.problemNo = newNo;
+            activeProblem.value.chapter = newChapter;
           }
 
-          showToast(`題號已修正為【${newNo}】 ✓`, "success");
+          // 觸發 Vue 3 computed (groupedChapters) 動態重新分組與排序
+          rawProblems.value = [...rawProblems.value];
+
+          closeEditProblemModal();
+          showToast(`題目資訊已成功更新！ ✓`, "success");
 
           if (typeof google !== 'undefined' && google.script && google.script.run) {
+            editProblemSaving.value = true;
             google.script.run
               .withSuccessHandler((res) => {
-                showToast(`雲端題號已成功更新為【${res.newProblemNo || newNo}】`, "success");
+                editProblemSaving.value = false;
+                showToast(`雲端資料庫已同步更新！`, "success");
               })
               .withFailureHandler((err) => {
+                editProblemSaving.value = false;
                 // 失敗復原
-                prob.problemNo = oldNo;
                 if (target) {
                   target.problemNo = oldNo;
+                  target.chapter = oldChapter;
+                  rawProblems.value = [...rawProblems.value];
                 }
-                showToast("修改題號失敗: " + err.message, "error");
+                if (activeProblem.value && activeProblem.value.course === course && activeProblem.value.problemNo === newNo) {
+                  activeProblem.value.problemNo = oldNo;
+                  activeProblem.value.chapter = oldChapter;
+                }
+                showToast("更新題目資訊失敗: " + err.message, "error");
               })
-              .renameProblemNo(prob.course, oldNo, newNo);
+              .updateProblemInfo(course, oldNo, newNo, newChapter);
           } else {
-            console.log(`本地模擬：題號【${oldNo}】已更名為【${newNo}】`);
+            console.log(`本地模擬：題號【${oldNo} ➜ ${newNo}】，章節【${oldChapter} ➜ ${newChapter}】`);
           }
         };
 
@@ -7532,9 +7670,9 @@ def __run_with_trace(user_code_str, stdin_str):
                 cancelSandboxEditUninitVal();
                 return;
               }
-              // 0.1 若正處於題號修改狀態，優先取消編輯題號
-              if (editingProblemKey.value) {
-                cancelEditProblemNo();
+              // 0.1 若正處於題目資訊修改彈窗，優先關閉彈窗
+              if (showEditProblemModal.value) {
+                closeEditProblemModal();
                 return;
               }
               // 1. 若手勢說明提示浮層顯示中，優先關閉手勢說明
@@ -7636,9 +7774,15 @@ def __run_with_trace(user_code_str, stdin_str):
           confirmDeleteChapter,
           toggleProblemVisibility,
           confirmShowAllProblems,
-          editingProblemKey,
-          editingProblemInputVal,
+          showEditProblemModal,
+          editProblemSaving,
           editProblemInputRef,
+          editProblemForm,
+          openEditProblemModal,
+          closeEditProblemModal,
+          toggleEditChapterMode,
+          onEditChapterSelectChange,
+          saveProblemInfo,
           customUninitOverrides,
           editingUninitVar,
           editingUninitVal,
@@ -7653,9 +7797,6 @@ def __run_with_trace(user_code_str, stdin_str):
           startSandboxEditUninitVal,
           cancelSandboxEditUninitVal,
           saveSandboxCustomUninitVal,
-          startEditProblemNo,
-          cancelEditProblemNo,
-          saveEditedProblemNo,
           moveProblem,
           openCourseModal,
           createCourse,
