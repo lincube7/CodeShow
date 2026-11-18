@@ -42,28 +42,24 @@
     /* Carbon 預覽區塊樣式微調 */
     #carbon-target pre[class*="language-"] {
       margin: 0;
-      padding: 1.25rem 1rem;
+      padding: 1.25rem 1rem 1.25rem 3.8em;
       background: transparent;
       border: none;
       box-shadow: none;
+      position: relative;
     }
-
-    /* 行號區塊樣式
-       原因：Prism line-numbers 把 .line-numbers-rows 定位在 pre 左側 -3.8em，
-       若 pre 距 overflow:hidden 容器左邊不足 3.8em，數字會被裁掉。
-       解法：.code-pad-left 給 codeWrapper 加 4em 左 padding，
-       使 line-numbers-rows 落在容器範圍內（4em - 3.8em = 0.2em 安全距離）。 */
-    #carbon-target .code-pad-left {
-      padding-left: 4em !important;
+    /* 行號：由 JS textContent 顯示數字，停用 Prism 預設的 CSS counter */
+    .line-numbers .line-numbers-rows > span::before {
+      content: none !important;
     }
     .line-numbers .line-numbers-rows {
       border-right: 1px solid rgba(255, 255, 255, 0.15);
     }
-    .line-numbers .line-numbers-rows > span::before {
-      color: rgba(255, 255, 255, 0.45) !important;
-    }
-    .line-numbers .line-numbers-rows > span:before {
-      color: rgba(255, 255, 255, 0.45) !important;
+    .line-numbers .line-numbers-rows > span {
+      display: block;
+      color: rgba(255, 255, 255, 0.45);
+      text-align: right;
+      padding-right: 0.6em;
     }
 
     /* 溫潤琥珀金重點螢光標記 — display:inline 讓 html2canvas 能正確計算背景 Y 座標 */
@@ -1807,7 +1803,7 @@
                     </div>
 
                     <!-- 真正的程式碼高亮主體 (層級 z-index: 10，強力防護下支援微扭曲 text-warp) -->
-                    <div class="p-2 code-pad-left relative z-10" :class="form.ocrProtection === 'strong' ? 'ocr-text-warp' : ''">
+                    <div class="p-2 relative z-10" :class="form.ocrProtection === 'strong' ? 'ocr-text-warp' : ''">
                       <pre class="line-numbers text-xs"><code ref="previewCode" :class="['language-' + form.language, form.ocrProtection === 'strong' ? 'ocr-chromatic-strong' : (form.ocrProtection === 'standard' ? 'ocr-chromatic-standard' : '')]">{{ form.code || '// 尚未輸入程式碼' }}</code></pre>
                     </div>
 
@@ -7278,7 +7274,9 @@ def __run_with_trace(user_code_str, stdin_str):
                 rowsSpan.setAttribute('aria-hidden', 'true');
                 rowsSpan.className = 'line-numbers-rows';
                 for (let i = 0; i < lineCount; i++) {
-                  rowsSpan.appendChild(document.createElement('span'));
+                  const span = document.createElement('span');
+                  span.textContent = String(i + 1);
+                  rowsSpan.appendChild(span);
                 }
                 preEl.appendChild(rowsSpan);
               }
@@ -7352,11 +7350,14 @@ def __run_with_trace(user_code_str, stdin_str):
             const targetEl = document.getElementById("carbon-target");
             await new Promise(r => requestAnimationFrame(r));
 
-            // ★★★ 全新方案：完全在 onclone 裡處理 ★★★
-            // 不測量真實 DOM 座標、不插入 overlay div、不用 Canvas 2D
-            // 一切修改都在 clone 的 DOM 上進行，html2canvas 直接渲染 clone
+            // ★★★ 最終方案：Canvas 2D 繪製高亮 + 手動行號 ★★★
+            // html2canvas 對 inline 元素的 background+padding 渲染有已知 Y 偏移 bug，
+            // 無論用 inline / inline-block / 替換 span 都無法完美修正。
+            // 解法：在 onclone 中記錄 mark 座標，移除 mark 背景，讓 html2canvas 只渲染文字，
+            // 渲染完成後用 Canvas 2D API 在正確位置繪製琥珀色底色塊。
             const rawCode = form.value.code || '';
             const lineCount = rawCode.replace(/@@([\s\S]*?)@@/g, '$1').split('\n').length;
+            const hlRects = []; // 收集高亮區域座標
 
             const rawCanvas = await html2canvas(targetEl, {
               scale: 2,
@@ -7371,51 +7372,102 @@ def __run_with_trace(user_code_str, stdin_str):
                   el.classList.remove('ocr-text-warp');
                 });
 
-                // --- 2. 修復高亮底色 Y 偏移 ---
-                // html2canvas 渲染 display:inline 的 background-color 時 Y 座標會偏移
-                // 解法：改為 inline-block，html2canvas 對 inline-block 背景渲染正確
-                clonedDoc.querySelectorAll('.code-hl-token').forEach(el => {
-                  el.style.setProperty('display', 'inline-block', 'important');
-                  el.style.setProperty('line-height', 'inherit', 'important');
-                  el.style.setProperty('vertical-align', 'baseline', 'important');
-                });
+                // --- 2. 收集高亮位置 & 移除背景（由 Canvas 2D 後繪）---
+                const clonedTarget = clonedDoc.getElementById('carbon-target');
+                if (clonedTarget) {
+                  clonedTarget.querySelectorAll('.code-hl-token').forEach(mark => {
+                    // 先設 inline-block 讓 offsetWidth/Height 有值（inline 元素可能回傳 0）
+                    mark.style.setProperty('display', 'inline-block', 'important');
+                    mark.style.setProperty('vertical-align', 'baseline', 'important');
+                    // 用 offsetTop/Left 相對於 offsetParent 鏈算出相對於 carbon-target 的座標
+                    let top = 0, left = 0;
+                    let el = mark;
+                    while (el && el !== clonedTarget) {
+                      top += el.offsetTop || 0;
+                      left += el.offsetLeft || 0;
+                      el = el.offsetParent;
+                    }
+                    hlRects.push({
+                      top: top,
+                      left: left,
+                      width: mark.offsetWidth,
+                      height: mark.offsetHeight
+                    });
+                    // 移除背景，只留文字讓 html2canvas 渲染
+                    mark.style.setProperty('background', 'transparent', 'important');
+                    mark.style.setProperty('padding', '0', 'important');
+                    mark.style.setProperty('margin', '0', 'important');
+                  });
+                }
 
                 // --- 3. 解除 overflow:hidden 裁切（讓行號可見）---
-                const codeContainer = clonedDoc.querySelector('[ref="codeContainerRef"]')
-                  || clonedDoc.querySelector('#carbon-target .relative.overflow-hidden');
+                const codeContainer = clonedDoc.querySelector('#carbon-target .relative.overflow-hidden');
                 if (codeContainer) {
                   codeContainer.style.overflow = 'visible';
                 }
 
-                // --- 4. 手動建立行號（不依賴 CSS counter / Prism plugin）---
+                // --- 4. 確保行號可見（clone 中的行號由 Prism CSS + textContent 驅動）---
                 const clonedPre = clonedDoc.querySelector('#carbon-target pre');
                 if (clonedPre) {
-                  // 移除可能殘留的舊行號
+                  // 確保 pre 有 position:relative（行號定位的錨點）
+                  clonedPre.style.position = 'relative';
+                  // 確保 padding-left 足夠容納行號
+                  clonedPre.style.paddingLeft = '3.8em';
+
+                  // 移除可能殘留的 Prism 自動產生的空行號
                   const oldRows = clonedPre.querySelector('.line-numbers-rows');
                   if (oldRows) oldRows.remove();
 
-                  // 建立行號容器
+                  // 建立行號容器（全用 inline style，不依賴任何外部 CSS）
                   const rowsSpan = clonedDoc.createElement('span');
-                  rowsSpan.className = 'line-numbers-rows';
                   rowsSpan.setAttribute('aria-hidden', 'true');
                   rowsSpan.style.cssText =
-                    'position:absolute;top:0;left:-3.8em;width:3em;' +
+                    'position:absolute;top:0;left:0;width:3em;' +
                     'border-right:1px solid rgba(255,255,255,0.15);' +
-                    'pointer-events:none;user-select:none;font-size:inherit;';
+                    'pointer-events:none;user-select:none;font-size:100%;' +
+                    'letter-spacing:-1px;padding-top:1.25rem;';
 
                   for (let i = 0; i < lineCount; i++) {
                     const span = clonedDoc.createElement('span');
                     span.style.cssText =
                       'display:block;text-align:right;padding-right:0.6em;' +
-                      'color:rgba(255,255,255,0.45);counter-increment:none;';
+                      'color:rgba(255,255,255,0.45);';
                     span.textContent = String(i + 1);
                     rowsSpan.appendChild(span);
                   }
-                  clonedPre.style.position = 'relative';
                   clonedPre.appendChild(rowsSpan);
                 }
               }
             });
+
+            // ★★★ html2canvas 渲染完成後，用 Canvas 2D 繪製高亮底色塊 ★★★
+            // 直接在 canvas 上疊加半透明琥珀色塊，文字仍然清晰可見
+            const canvasScale = 2; // 與 html2canvas scale 一致
+            if (hlRects.length > 0) {
+              const ctx = rawCanvas.getContext('2d');
+              ctx.fillStyle = 'rgba(251,191,36,0.55)';
+              hlRects.forEach(r => {
+                if (r.width > 0 && r.height > 0) {
+                  const x = r.left * canvasScale;
+                  const y = r.top * canvasScale;
+                  const w = r.width * canvasScale;
+                  const h = r.height * canvasScale;
+                  const radius = 3 * canvasScale;
+                  ctx.beginPath();
+                  ctx.moveTo(x + radius, y);
+                  ctx.lineTo(x + w - radius, y);
+                  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+                  ctx.lineTo(x + w, y + h - radius);
+                  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+                  ctx.lineTo(x + radius, y + h);
+                  ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+                  ctx.lineTo(x, y + radius);
+                  ctx.quadraticCurveTo(x, y, x + radius, y);
+                  ctx.closePath();
+                  ctx.fill();
+                }
+              });
+            }
 
             const base64Data = compressCanvas(rawCanvas, 1350, 0.88);
 
