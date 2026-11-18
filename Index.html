@@ -51,22 +51,17 @@
       border-right: 1px solid rgba(255, 255, 255, 0.1);
     }
 
-    /* 溫潤琥珀金重點螢光標記 (無邊框、清透溫潤不刺眼、inline-flex 精準垂直居中不位移) */
+    /* 溫潤琥珀金重點螢光標記 — display:inline 讓 html2canvas 能正確計算背景 Y 座標 */
     .code-hl-token {
-      background-color: rgba(251, 191, 36, 0.38) !important;
+      background-color: rgba(251, 191, 36, 0.55) !important;
       color: inherit !important;
-      border-radius: 4px;
-      padding: 0 5px !important;
+      border-radius: 3px;
+      padding: 2px 5px !important;
       margin: 0 1px;
       border: none !important;
       box-shadow: none !important;
       font-weight: 600;
-      display: inline-flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      vertical-align: -1px !important;
-      height: 1.4em !important;
-      line-height: 1 !important;
+      display: inline !important;
       box-decoration-break: clone;
       -webkit-box-decoration-break: clone;
     }
@@ -7325,9 +7320,23 @@ def __run_with_trace(user_code_str, stdin_str):
               scrollY: 0,
               logging: false,
               onclone: (clonedDoc) => {
-                // 暫時關閉微扭曲 transform，徹底杜絕 html2canvas 座標轉換矩陣導致的背景與文字分離位移
-                const warpEls = clonedDoc.querySelectorAll('.ocr-text-warp');
-                warpEls.forEach(el => { el.style.transform = 'none'; });
+                // 1. 移除 ocr-text-warp transform（防止 html2canvas 座標矩陣偏移）
+                clonedDoc.querySelectorAll('.ocr-text-warp').forEach(el => {
+                  el.style.transform = 'none';
+                });
+                // 2. 移除 Prism line-numbers plugin（它會注入 padding-left + 絕對定位 span，
+                //    導致 html2canvas 計算 mark 元素 Y 座標時多算了 padding，造成螢光框上移）
+                clonedDoc.querySelectorAll('pre.line-numbers').forEach(pre => {
+                  pre.classList.remove('line-numbers');
+                  pre.querySelectorAll('.line-numbers-rows').forEach(r => r.remove());
+                  pre.style.paddingLeft = '';  // 重設 Prism 注入的 padding-left: 3.8em
+                });
+                // 3. 強制 mark 元素用最簡單的 inline 渲染，防止殘留 inline-flex 造成偏移
+                clonedDoc.querySelectorAll('.code-hl-token').forEach(el => {
+                  el.style.setProperty('display', 'inline', 'important');
+                  el.style.setProperty('vertical-align', 'baseline', 'important');
+                  el.style.setProperty('line-height', 'inherit', 'important');
+                });
               }
             });
 
