@@ -47,8 +47,20 @@
       border: none;
       box-shadow: none;
     }
+
+    /* 行號區塊樣式
+       原因：Prism line-numbers 把 .line-numbers-rows 定位在 pre 左側 -3.8em，
+       若 pre 距 overflow:hidden 容器左邊不足 3.8em，數字會被裁掉。
+       解法：.code-pad-left 給 codeWrapper 加 4em 左 padding，
+       使 line-numbers-rows 落在容器範圍內（4em - 3.8em = 0.2em 安全距離）。 */
+    #carbon-target .code-pad-left {
+      padding-left: 4em !important;
+    }
     .line-numbers .line-numbers-rows {
-      border-right: 1px solid rgba(255, 255, 255, 0.1);
+      border-right: 1px solid rgba(255, 255, 255, 0.15);
+    }
+    .line-numbers .line-numbers-rows > span::before {
+      color: rgba(255, 255, 255, 0.35) !important;
     }
 
     /* 溫潤琥珀金重點螢光標記 — display:inline 讓 html2canvas 能正確計算背景 Y 座標 */
@@ -1792,7 +1804,7 @@
                     </div>
 
                     <!-- 真正的程式碼高亮主體 (層級 z-index: 10，強力防護下支援微扭曲 text-warp) -->
-                    <div class="p-2 relative z-10" :class="form.ocrProtection === 'strong' ? 'ocr-text-warp' : ''">
+                    <div class="p-2 code-pad-left relative z-10" :class="form.ocrProtection === 'strong' ? 'ocr-text-warp' : ''">
                       <pre class="line-numbers text-xs"><code ref="previewCode" :class="['language-' + form.language, form.ocrProtection === 'strong' ? 'ocr-chromatic-strong' : (form.ocrProtection === 'standard' ? 'ocr-chromatic-standard' : '')]">{{ form.code || '// 尚未輸入程式碼' }}</code></pre>
                     </div>
 
@@ -7312,6 +7324,21 @@ def __run_with_trace(user_code_str, stdin_str):
 
             const targetEl = document.getElementById("carbon-target");
 
+            // ★ 關鍵：uploading=true 觸發 Vue re-render，可能清除 Prism 注入的 marks。
+            //   因此在 nextTick 後強制重新注入 Prism highlight + marks，
+            //   確保 getBoundingClientRect() 測量時 .code-hl-token 元素確實存在。
+            if (previewCode.value && window.Prism) {
+              Prism.highlightElement(previewCode.value);
+              if (previewCode.value.innerHTML && previewCode.value.innerHTML.includes('@@')) {
+                previewCode.value.innerHTML = previewCode.value.innerHTML.replace(
+                  /@@([\s\S]*?)@@/g,
+                  '<mark class="code-hl-token">$1</mark>'
+                );
+              }
+            }
+            // 等待一幀讓 DOM 與 layout 穩定後再測量
+            await new Promise(r => requestAnimationFrame(r));
+
             // ★ 終極修復策略：
             //   html2canvas 渲染 inline <mark> 背景時有根本性 bug（Y 座標計算錯誤），
             //   無論如何調整 CSS/onclone 都無法修正（歷經 6 次嘗試驗證）。
@@ -7324,12 +7351,14 @@ def __run_with_trace(user_code_str, stdin_str):
             const hlPositions = [];
             targetEl.querySelectorAll('.code-hl-token').forEach(mark => {
               const r = mark.getBoundingClientRect();
-              hlPositions.push({
-                top:    r.top    - targetRect.top,
-                left:   r.left   - targetRect.left,
-                width:  r.width,
-                height: r.height
-              });
+              if (r.width > 0 && r.height > 0) {   // 過濾掉 collapsed 的元素
+                hlPositions.push({
+                  top:    r.top    - targetRect.top,
+                  left:   r.left   - targetRect.left,
+                  width:  r.width,
+                  height: r.height
+                });
+              }
             });
 
             // 使用 html2canvas 將 DOM 轉為 2 倍高清 Canvas
