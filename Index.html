@@ -1727,13 +1727,12 @@
                 <label class="block text-xs font-medium text-amber-400 font-mono">
                   貼上程式碼 (支援填空「??」與螢光畫重點「@@語法@@」)
                 </label>
-                <!-- 🪄 美化排版按鈕 (大括號語言 C / C++ / Java / JS 顯示，Python 隱藏) -->
+                <!-- 🪄 美化排版按鈕 (全語言支援：Python 智慧縮排吸附 / C-Family 1TBS) -->
                 <button
-                  v-if="form.language !== 'python'"
                   type="button"
                   @click="autoFormatUploadCode"
                   class="px-2.5 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-slate-700 text-xs flex items-center gap-1 active:scale-95 transition shadow-sm"
-                  title="依當前語言自動調整縮排與排版美化">
+                  title="自動調整縮排與排版美化 (Python 智能縮排吸附 / C++ 嚴格 1TBS 規範)">
                   <span class="text-xs">🪄</span>
                   <span>美化排版</span>
                 </button>
@@ -2075,13 +2074,13 @@
 
           <!-- 右側工具快捷鍵：魔術棒美化、檔案匯出、換行開關、關閉 -->
           <div class="flex items-center space-x-2 shrink-0 z-10 ml-auto">
-            <!-- 🪄 魔術棒按鈕 (僅在 C++ 編輯模式可用) -->
+            <!-- 🪄 魔術棒按鈕 (編輯模式可用：支援 Python 智能縮排吸附與 C++ 1TBS) -->
             <button
-              v-show="sandboxMode === 'editor' && sandboxLang === 'cpp'"
+              v-show="sandboxMode === 'editor'"
               type="button"
               @click="autoFormatSandboxCode"
               class="h-8 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 transition border border-slate-700 text-xs flex items-center gap-1.5 active:scale-95 shadow-sm"
-              title="自動調整縮排與排版美化 (C++ 嚴格 1TBS 規範)">
+              title="自動調整縮排與排版美化 (Python 智能縮排吸附 / C++ 嚴格 1TBS 規範)">
               <span class="text-sm">🪄</span>
               <span class="hidden sm:inline">美化排版</span>
             </button>
@@ -6096,12 +6095,102 @@ int main() {
             }
             return result.join('\n');
           } else {
-            // Python: PEP 8 規範 (Tab轉4空格，清理行尾多餘空白)
-            const lines = rawCode.replace(/\r\n/g, '\n').split('\n');
-            const result = lines.map(l => {
-              let s = l.replace(/\t/g, '    ');
-              return s.trimEnd();
-            });
+            // Python: 啟發式智能縮排吸附排版引擎 (Heuristic Smart-Indent & Grid-Snap)
+            const rawLines = rawCode.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+            let stack = [{ logical: 0, raw: 0, kw: '' }];
+            let expectIndent = false;
+            const result = [];
+            const indentStr = '    '; // PEP 8 標準 4 空格
+
+            // 輔助函式：去除行尾註解 (保護字串內部引號中的 #)
+            const stripComment = (line) => {
+              let inQuotes = false;
+              let quoteChar = '';
+              for (let i = 0; i < line.length; i++) {
+                const ch = line[i];
+                if ((ch === '"' || ch === "'") && (i === 0 || line[i - 1] !== '\\')) {
+                  if (!inQuotes) { inQuotes = true; quoteChar = ch; }
+                  else if (quoteChar === ch) { inQuotes = false; }
+                } else if (ch === '#' && !inQuotes) {
+                  return line.slice(0, i).trimEnd();
+                }
+              }
+              return line.trimEnd();
+            };
+
+            const dedentRegex = /^(elif\b|else\s*:|except\b|finally\s*:)/;
+
+            for (let i = 0; i < rawLines.length; i++) {
+              const origLine = rawLines[i];
+              const expandedLine = origLine.replace(/\t/g, '    ');
+              const trimmed = expandedLine.trim();
+
+              // 空行：保留空行，不干擾縮排堆疊與下行狀態
+              if (!trimmed) {
+                result.push('');
+                continue;
+              }
+
+              const rawIndentMatch = expandedLine.match(/^[ ]*/);
+              const rawIndent = rawIndentMatch ? rawIndentMatch[0].length : 0;
+              const codeWithoutComment = stripComment(trimmed);
+
+              // 純註解行：跟隨當前預期層級，但保持 expectIndent 給下行程式碼使用
+              if (trimmed.startsWith('#')) {
+                const currentLevel = expectIndent
+                  ? stack[stack.length - 1].logical + 1
+                  : stack[stack.length - 1].logical;
+                result.push(indentStr.repeat(currentLevel) + trimmed);
+                continue;
+              }
+
+              const isDedent = dedentRegex.test(codeWithoutComment);
+              let targetLogical = 0;
+
+              if (expectIndent) {
+                // 冒號 ':' 後下一行：強制縮排 +1 階，並紀錄此區塊基準
+                const parent = stack[stack.length - 1];
+                targetLogical = parent.logical + 1;
+                const effectiveRaw = rawIndent > parent.raw ? rawIndent : (parent.raw + 4);
+                stack.push({ logical: targetLogical, raw: effectiveRaw, kw: trimmed.split(/\s+/)[0] });
+                expectIndent = false;
+              } else {
+                if (rawIndent === 0) {
+                  // 頂格歸零：必然退回最外層 (level 0)
+                  stack = [{ logical: 0, raw: 0, kw: '' }];
+                  targetLogical = 0;
+                } else if (isDedent) {
+                  // elif / else / except / finally: 自動退回與主結構 (if/try) 對齊
+                  if (stack.length > 1) {
+                    stack.pop();
+                  }
+                  targetLogical = stack[stack.length - 1].logical;
+                } else {
+                  // 一般行：在 stack 中尋找最接近原始縮排的祖先層級，平滑吸附
+                  let bestIdx = 0;
+                  let minDiff = Infinity;
+                  for (let j = 0; j < stack.length; j++) {
+                    const diff = Math.abs(rawIndent - stack[j].raw);
+                    if (diff <= minDiff) {
+                      minDiff = diff;
+                      bestIdx = j;
+                    }
+                  }
+                  while (stack.length - 1 > bestIdx) {
+                    stack.pop();
+                  }
+                  targetLogical = stack[stack.length - 1].logical;
+                }
+              }
+
+              result.push(indentStr.repeat(targetLogical) + trimmed);
+
+              // 檢查行末是否以 ':' 結尾（開啟下一層縮排）
+              if (codeWithoutComment.endsWith(':')) {
+                expectIndent = true;
+              }
+            }
+
             return result.join('\n');
           }
         };
