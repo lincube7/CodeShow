@@ -308,7 +308,7 @@
       font-variant-ligatures: none !important;
       -webkit-font-variant-ligatures: none !important;
       font-feature-settings: "liga" 0, "calt" 0 !important;
-      line-height: 1.6;
+      line-height: inherit;
       border-radius: 4px;
       transition: background-color 0.15s ease, color 0.15s ease;
       user-select: none;
@@ -891,6 +891,33 @@
                   </div>
                 </div>
                 <div class="flex items-center gap-2">
+                  <!-- 字級調整控制器 (4 檔切換: 13/15/17/19px) -->
+                  <div class="inline-flex items-center rounded-lg bg-slate-800/90 border border-slate-700/80 p-0.5 text-xs shadow-inner select-none shrink-0" title="程式碼與終端輸出字體大小">
+                    <button
+                      type="button"
+                      @click="adjustCodeFontSize(-1)"
+                      :disabled="codeFontSize <= 13"
+                      class="w-6 h-5 flex items-center justify-center rounded text-slate-300 enabled:hover:bg-slate-700 enabled:hover:text-white transition disabled:opacity-30 disabled:cursor-not-allowed font-bold text-[10px]"
+                      title="縮小字級 (A-)">
+                      A-
+                    </button>
+                    <button
+                      type="button"
+                      @click="resetCodeFontSize"
+                      class="px-1.5 h-5 flex items-center justify-center font-mono text-[11px] font-bold text-indigo-300 hover:text-white hover:bg-slate-700/60 rounded transition tabular-nums"
+                      title="目前字級，點擊恢復預設 15px">
+                      {{ codeFontSize }}px
+                    </button>
+                    <button
+                      type="button"
+                      @click="adjustCodeFontSize(1)"
+                      :disabled="codeFontSize >= 19"
+                      class="w-6 h-5 flex items-center justify-center rounded text-slate-300 enabled:hover:bg-slate-700 enabled:hover:text-white transition disabled:opacity-30 disabled:cursor-not-allowed font-bold text-[10px]"
+                      title="放大字級 (A+)">
+                      A+
+                    </button>
+                  </div>
+
                   <!-- 自動換行切換按鈕 -->
                   <button 
                     type="button"
@@ -932,22 +959,26 @@
               </div>
 
               <!-- 程式碼行列表 -->
-              <div class="flex-1 overflow-y-auto p-3 font-code text-xs text-slate-200 space-y-0.5 select-none" ref="codeScrollRef">
+              <div 
+                class="flex-1 overflow-y-auto p-3 font-code space-y-0.5 select-none" 
+                :style="{ fontSize: codeStyleConfig.fontSize, lineHeight: codeStyleConfig.lineHeight }"
+                ref="codeScrollRef">
                 <div 
                   v-for="(line, idx) in parsedCodeLines" 
                   :key="idx"
                   :class="[
                     'exec-line group/line flex items-start px-2 py-0.5 rounded transition-all duration-150',
                     execError && execError.line === (idx + 1) ? 'exec-line-error' : '',
-                    (!execError && currentExecutingLine === (idx + 1)) ? 'exec-line-active text-white font-semibold' : '',
-                    (hasExecutedLine(idx + 1) && currentExecutingLine !== (idx + 1) && !(execError && execError.line === (idx + 1))) ? 'exec-line-prev text-slate-300' : 'text-slate-400',
+                    (!execError && currentExecutingLine === (idx + 1)) ? 'exec-line-active text-white font-bold' : '',
+                    (hasExecutedLine(idx + 1) && currentExecutingLine !== (idx + 1) && !(execError && execError.line === (idx + 1))) ? 'exec-line-prev text-slate-100' : 'text-slate-200',
                     breakpoints.has(idx + 1) ? 'bg-rose-950/20' : ''
                   ]">
                   <!-- 行號與中斷點/指針熱區 (點擊切換中斷點) -->
                   <div 
                     @click="toggleBreakpoint(idx + 1)"
                     :title="breakpoints.has(idx + 1) ? '點擊移除第 ' + (idx + 1) + ' 行中斷點' : '點擊設定第 ' + (idx + 1) + ' 行中斷點'"
-                    class="w-14 shrink-0 flex items-center justify-between font-mono text-[11px] pr-2 pt-0.5 select-none cursor-pointer hover:bg-slate-800/80 rounded-l transition-colors">
+                    :style="{ fontSize: codeStyleConfig.gutterFontSize }"
+                    class="w-14 shrink-0 flex items-center justify-between font-mono pr-2 pt-0.5 select-none cursor-pointer hover:bg-slate-800/80 rounded-l transition-colors">
                     
                     <!-- 左側：中斷點圖示 / 懸停預覽 -->
                     <span class="w-3 flex items-center justify-center shrink-0">
@@ -985,8 +1016,9 @@
                         @input="onBlankInput"
                         @keydown.tab.prevent="onBlankTab($event, seg.blankIndex)"
                         placeholder="填入代碼"
-                        :style="{ width: Math.max(80, ((blankAnswers[seg.blankIndex] || '').length * 9 + 40)) + 'px' }"
-                        class="blank-fill-input h-5 text-xs mx-1 inline-block align-middle"
+                        :style="{ width: Math.max(80, ((blankAnswers[seg.blankIndex] || '').length * 9 + 40)) + 'px', fontSize: codeStyleConfig.fontSize }"
+                        :class="codeStyleConfig.blankHeight"
+                        class="blank-fill-input mx-1 inline-block align-middle"
                         :disabled="executing || currentStepIndex > 0"
                       />
                     </template>
@@ -1288,7 +1320,7 @@
                     清空
                   </button>
                 </div>
-                <div class="flex-1 p-2.5 font-code text-xs overflow-auto whitespace-pre select-text space-y-0.5" ref="stdoutScrollRef">
+                <div class="flex-1 p-2.5 font-code overflow-auto whitespace-pre select-text space-y-0.5" :style="{ fontSize: codeStyleConfig.stdoutFontSize, lineHeight: codeStyleConfig.stdoutLineHeight }" ref="stdoutScrollRef">
                   <template v-if="formattedOutputLines.length > 0">
                     <div 
                       v-for="(outItem, oIdx) in formattedOutputLines" 
@@ -2095,6 +2127,33 @@
               <span class="hidden sm:inline">下載檔案</span>
             </button>
 
+            <!-- 字級調整控制器 (4 檔切換: 13/15/17/19px) -->
+            <div class="h-8 inline-flex items-center rounded-lg bg-slate-800 border border-slate-700 p-0.5 text-xs shadow-inner select-none shrink-0" title="程式碼與終端輸出字體大小">
+              <button
+                type="button"
+                @click="adjustCodeFontSize(-1)"
+                :disabled="codeFontSize <= 13"
+                class="w-7 h-full flex items-center justify-center rounded text-slate-300 enabled:hover:bg-slate-700 enabled:hover:text-white transition disabled:opacity-30 disabled:cursor-not-allowed font-bold text-xs"
+                title="縮小字級 (A-)">
+                A-
+              </button>
+              <button
+                type="button"
+                @click="resetCodeFontSize"
+                class="px-2 h-full flex items-center justify-center font-mono text-xs font-bold text-indigo-300 hover:text-white hover:bg-slate-700/60 rounded transition tabular-nums"
+                title="目前字級，點擊恢復預設 15px">
+                {{ codeFontSize }}px
+              </button>
+              <button
+                type="button"
+                @click="adjustCodeFontSize(1)"
+                :disabled="codeFontSize >= 19"
+                class="w-7 h-full flex items-center justify-center rounded text-slate-300 enabled:hover:bg-slate-700 enabled:hover:text-white transition disabled:opacity-30 disabled:cursor-not-allowed font-bold text-xs"
+                title="放大字級 (A+)">
+                A+
+              </button>
+            </div>
+
             <!-- ↩ 自動換行切換 -->
             <button
               type="button"
@@ -2203,11 +2262,12 @@
               <!-- 狀態 A: 自由編輯模式 (帶即時對齊行號的 textarea) -->
               <div 
                 v-if="sandboxMode === 'editor'" 
-                class="flex-1 flex min-h-0 overflow-hidden font-code text-xs bg-[#161622]">
+                class="flex-1 flex min-h-0 overflow-hidden font-code bg-[#161622]">
                 <!-- 左側行號欄 (Gutter) -->
                 <div 
                   ref="sandboxLineGutterRef"
-                  class="w-12 shrink-0 overflow-hidden py-3 pr-2 text-right text-slate-600 font-mono select-none border-r border-slate-800/80 leading-[1.625rem]">
+                  :style="{ fontSize: codeStyleConfig.fontSize, lineHeight: codeStyleConfig.lineHeight }"
+                  class="w-12 shrink-0 overflow-hidden py-3 pr-2 text-right text-slate-600 font-mono select-none border-r border-slate-800/80">
                   <div v-for="n in sandboxLineCount" :key="n">{{ n }}</div>
                 </div>
 
@@ -2221,15 +2281,17 @@
                   @keydown.enter.prevent="handleSandboxEnter"
                   spellcheck="false"
                   placeholder="請在此輸入或貼上您的程式碼..."
+                  :style="{ fontSize: codeStyleConfig.fontSize, lineHeight: codeStyleConfig.lineHeight }"
                   :class="sandboxWrapEnabled ? 'whitespace-pre-wrap break-words' : 'whitespace-pre overflow-x-auto'"
-                  class="flex-1 p-3 bg-transparent text-slate-100 font-code text-xs leading-[1.625rem] focus:outline-none resize-none selection:bg-indigo-600/40">
+                  class="flex-1 p-3 bg-transparent text-slate-100 font-code focus:outline-none resize-none selection:bg-indigo-600/40">
                 </textarea>
               </div>
 
               <!-- 狀態 B: 逐行除錯模式 (指針 ▶ 追蹤逐行清單) -->
               <div 
                 v-else 
-                class="flex-1 overflow-y-auto p-3 font-code text-xs text-slate-200 space-y-0.5 select-none" 
+                class="flex-1 overflow-y-auto p-3 font-code space-y-0.5 select-none" 
+                :style="{ fontSize: codeStyleConfig.fontSize, lineHeight: codeStyleConfig.lineHeight }"
                 ref="sandboxCodeScrollRef">
                 <div 
                   v-for="(line, idx) in sandboxParsedCodeLines" 
@@ -2237,15 +2299,16 @@
                   :class="[
                     'exec-line group/line flex items-start px-2 py-0.5 rounded transition-all duration-150',
                     sandboxError && sandboxError.line === (idx + 1) ? 'exec-line-error' : '',
-                    (!sandboxError && sandboxCurrentExecutingLine === (idx + 1)) ? 'exec-line-active text-white font-semibold' : '',
-                    (hasSandboxExecutedLine(idx + 1) && sandboxCurrentExecutingLine !== (idx + 1) && !(sandboxError && sandboxError.line === (idx + 1))) ? 'exec-line-prev text-slate-300' : 'text-slate-400',
+                    (!sandboxError && sandboxCurrentExecutingLine === (idx + 1)) ? 'exec-line-active text-white font-bold' : '',
+                    (hasSandboxExecutedLine(idx + 1) && sandboxCurrentExecutingLine !== (idx + 1) && !(sandboxError && sandboxError.line === (idx + 1))) ? 'exec-line-prev text-slate-100' : 'text-slate-200',
                     sandboxBreakpoints.has(idx + 1) ? 'bg-rose-950/20' : ''
                   ]">
                   <!-- 行號與中斷點/指針熱區 (點擊切換中斷點) -->
                   <div 
                     @click="toggleSandboxBreakpoint(idx + 1)"
                     :title="sandboxBreakpoints.has(idx + 1) ? '點擊移除第 ' + (idx + 1) + ' 行中斷點' : '點擊設定第 ' + (idx + 1) + ' 行中斷點'"
-                    class="w-14 shrink-0 flex items-center justify-between font-mono text-[11px] pr-2 pt-0.5 select-none cursor-pointer hover:bg-slate-800/80 rounded-l transition-colors">
+                    :style="{ fontSize: codeStyleConfig.gutterFontSize }"
+                    class="w-14 shrink-0 flex items-center justify-between font-mono pr-2 pt-0.5 select-none cursor-pointer hover:bg-slate-800/80 rounded-l transition-colors">
                     
                     <!-- 左側：中斷點圖示 / 懸停預覽 -->
                     <span class="w-3 flex items-center justify-center shrink-0">
@@ -2353,7 +2416,7 @@
                   </button>
                 </div>
 
-                <div class="flex-1 p-3 font-code text-xs overflow-auto whitespace-pre select-text space-y-0.5" ref="sandboxStdoutScrollRef">
+                <div class="flex-1 p-3 font-code overflow-auto whitespace-pre select-text space-y-0.5" :style="{ fontSize: codeStyleConfig.stdoutFontSize, lineHeight: codeStyleConfig.stdoutLineHeight }" ref="sandboxStdoutScrollRef">
                   <template v-if="sandboxFormattedOutputLines.length > 0">
                     <div 
                       v-for="(outItem, oIdx) in sandboxFormattedOutputLines" 
@@ -2607,7 +2670,7 @@
                       清空
                     </button>
                   </div>
-                  <div class="flex-1 p-2.5 font-code text-xs overflow-auto whitespace-pre select-text space-y-0.5" ref="sandboxStdoutScrollRef">
+                  <div class="flex-1 p-2.5 font-code overflow-auto whitespace-pre select-text space-y-0.5" :style="{ fontSize: codeStyleConfig.stdoutFontSize, lineHeight: codeStyleConfig.stdoutLineHeight }" ref="sandboxStdoutScrollRef">
                     <template v-if="sandboxFormattedOutputLines.length > 0">
                       <div 
                         v-for="(outItem, oIdx) in sandboxFormattedOutputLines" 
@@ -3107,6 +3170,80 @@
         });
         const currentOutput = ref('');
         const codeWrapEnabled = ref(true);
+
+        // 程式碼與標準輸出全域字級調整 (4 檔切換: 13/15/17/19px，預設 15px)
+        const CODE_FONT_SIZES = [13, 15, 17, 19];
+        const DEFAULT_CODE_FONT_SIZE = 15;
+        const codeFontSize = ref(DEFAULT_CODE_FONT_SIZE);
+        try {
+          const savedFontSize = parseInt(localStorage.getItem('codeshow_code_font_size'), 10);
+          if (CODE_FONT_SIZES.includes(savedFontSize)) {
+            codeFontSize.value = savedFontSize;
+          }
+        } catch (_) {}
+
+        const setCodeFontSize = (size) => {
+          if (CODE_FONT_SIZES.includes(size)) {
+            codeFontSize.value = size;
+            try {
+              localStorage.setItem('codeshow_code_font_size', String(size));
+            } catch (_) {}
+          }
+        };
+
+        const adjustCodeFontSize = (delta) => {
+          const idx = CODE_FONT_SIZES.indexOf(codeFontSize.value);
+          const currentIdx = idx === -1 ? 1 : idx;
+          const nextIdx = Math.max(0, Math.min(CODE_FONT_SIZES.length - 1, currentIdx + delta));
+          setCodeFontSize(CODE_FONT_SIZES[nextIdx]);
+        };
+
+        const resetCodeFontSize = () => {
+          setCodeFontSize(DEFAULT_CODE_FONT_SIZE);
+        };
+
+        const codeStyleConfig = computed(() => {
+          const size = codeFontSize.value;
+          switch (size) {
+            case 13:
+              return {
+                fontSize: '13px',
+                lineHeight: '22px',
+                gutterFontSize: '11px',
+                stdoutFontSize: '12px',
+                stdoutLineHeight: '20px',
+                blankHeight: 'h-5',
+              };
+            case 17:
+              return {
+                fontSize: '17px',
+                lineHeight: '30px',
+                gutterFontSize: '13px',
+                stdoutFontSize: '15px',
+                stdoutLineHeight: '24px',
+                blankHeight: 'h-6',
+              };
+            case 19:
+              return {
+                fontSize: '19px',
+                lineHeight: '34px',
+                gutterFontSize: '14px',
+                stdoutFontSize: '16px',
+                stdoutLineHeight: '26px',
+                blankHeight: 'h-7',
+              };
+            case 15:
+            default:
+              return {
+                fontSize: '15px',
+                lineHeight: '26px',
+                gutterFontSize: '12px',
+                stdoutFontSize: '14px',
+                stdoutLineHeight: '22px',
+                blankHeight: 'h-5',
+              };
+          }
+        });
 
         // 中斷點 (Breakpoints) 與自動執行 (Auto-Play) 狀態
         const breakpoints = ref(new Set());
@@ -8102,6 +8239,11 @@ def __run_with_trace(user_code_str, stdin_str):
           currentStepIndex,
           parsedCodeLines,
           codeWrapEnabled,
+          codeFontSize,
+          codeStyleConfig,
+          adjustCodeFontSize,
+          resetCodeFontSize,
+          setCodeFontSize,
           currentExecutingLine,
           hasExecutedLine,
           blankAnswers,

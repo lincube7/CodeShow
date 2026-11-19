@@ -124,7 +124,7 @@ flowchart TD
   * **C++**：按需懶載入純前端 C++ 直譯器 **JSCPP**，藉由 AST 樹 `nextNode().sLine` 精準獲取執行游標，並內建 `int main()` 遺漏 `return 0;` 與未初始化 `NaN` 的安全容錯修正；**內建 `<algorithm>` / `<bits/stdc++.h>` 零行號偏移同列相容補丁**，原生支援極為常用的 `min`、`max`（支援 `int`、`double`、`float`、`char`），若學生僅宣告 `<bits/stdc++.h>` 而未額外寫 `<iostream>`，系統智慧優先同列映射為 `<iostream>` 並於命名空間後方注入 `min`/`max`，確保 `cin`/`cout` 與演算法函式雙向就位，徹底解決輕量直譯器報出 `cannot find library:algorithm` 或 `cin does not exist` 的相容性障礙。
   * **完全零伺服器開銷**：全於訪客瀏覽器本地記憶體運算，不耗損 Google Apps Script 執行時間額度。
 * **左欄嚴格防複製代碼行高亮與長行自動折行 (Word Wrap)**：
-  * 當前執行行以 **藍紫色高亮與指針 ▶** 標示並自動捲動置中；已執行過的行維持高亮，未執行行淡化。
+  * **階梯式高對比色彩體系 (方案 B)**：未執行行採用清亮銀白（`text-slate-200`，對比度 12:1），開頁即一覽全貌告別暗灰；已執行過的行點亮為明亮雪白（`text-slate-100`，對比度 14.5:1）保留走廊點燈軌跡；當前執行行以 **藍紫色高亮與指針 ▶** 標示並自動捲動置中。
   * **長程式碼自動折行**：頂部提供「`↩ 自動換行 / 不換行`」雙態按鈕（預設開啟自動折行），即使視窗縮小或程式碼邏輯很長（如多條件判斷式），也能自然折行完整呈現，免去橫向手動拉動捲軸；折行時行號指針置頂對齊、填空框流暢自適應排列。
   * **全域禁用程式碼連字 (Disable Font Ligatures)**：設定 `font-variant-ligatures: none`，確保 `<=`, `>=`, `!=`, `==`, `->` 等運算子還原為各自獨立原始符號，避免字型合字將 `<=` 渲染為數學符號 `≤` 造成初學者混淆。
   * 全面套用 `user-select: none` 與停用右鍵，學生無法選取或複製程式碼純文字，維護「動手練習敲打鍵盤」教學宗旨。
@@ -233,6 +233,8 @@ flowchart TD
 |---|---|---|
 | [`Code.gs`](file:///Users/lincube/Documents/show_code/Code.gs) | 後端控制層 (GAS) | 負責入口 `doGet()`、身分鑑權、快取、Sheets 欄位擴充 (含 Language 與 SourceCode)、圖片生命週期管理。 |
 | [`Index.html`](file:///Users/lincube/Documents/show_code/Index.html) | 前端表現層 (SPA) | 內含 HTML、Vue 3、Prism.js、Pyodide/JSCPP 雙語言逐步執行器、變數表矩陣渲染器、anti-OCR 圖片檢視器、自由練習沙盒雙模系統。 |
+| [`Code.gs.v4_GCC`](file:///Users/lincube/Documents/show_code/Code.gs.v4_GCC) | 歷史版本存檔 (v4.0) | 第四版 C++ 完整 GCC (Godbolt API) 逐行除錯與 Carbon 渲染穩定版本後端存檔。 |
+| [`Index.html.v4_GCC`](file:///Users/lincube/Documents/show_code/Index.html.v4_GCC) | 歷史版本存檔 (v4.0) | 第四版 C++ 完整 GCC (Godbolt API) 逐行除錯與 Carbon 渲染穩定版本前端存檔。 |
 | [`Code.gs.v3_sandbox`](file:///Users/lincube/Documents/show_code/Code.gs.v3_sandbox) | 歷史版本存檔 (v3.0) | 第三版自由練習沙盒與即時監看式穩定版本後端存檔。 |
 | [`Index.html.v3_sandbox`](file:///Users/lincube/Documents/show_code/Index.html.v3_sandbox) | 歷史版本存檔 (v3.0) | 第三版自由練習沙盒與即時監看式穩定版本前端存檔。 |
 | [`Code.gs.v2_debug`](file:///Users/lincube/Documents/show_code/Code.gs.v2_debug) | 歷史版本存檔 (v2.0) | 第二版題庫逐行除錯後端存檔。 |
@@ -543,6 +545,37 @@ Google Apps Script 的網頁應用程式在修改程式碼後，**單純按儲�
   * **垂直 Padding 微調**：將 `.code-hl-token` 的上下內邊距由 `2px` 微調為 `1px`（`padding: 1px 5px !important;`），左右維持 5px 保持包裹豐滿感，垂直方向收斂 2px。
   * **行號與克隆 DOM 嚴格同動**：在 `onclone` 裡為 `clonedPre.style.lineHeight = '1.7'` 與行號 `span.style.cssText` 同步加上 `line-height: 1.7;`，確保靜態文字與動態 Canvas 2D 底色塊完全不走位。
   * **成果**：連續多行劃重點時，上下相鄰行底色塊之間自然保留 3~4px 寬鬆優雅的深色呼吸間隙，徹底告別黏連，排版質感大幅提升。
+
+---
+
+### 10. 👓 逐行除錯階梯式高對比色彩 ＆ 4 檔無障礙字級調整控制器 (v4.2)
+
+為解決電腦教室螢幕遠距閱讀吃力、弱視學生閱讀障礙與投影機展示需求，系統實作了專為程式教學設計的**階梯式高對比色彩**與**多檔無障礙字級調整控制器**：
+
+#### 1. 逐行除錯階梯式高對比色彩體系 (方案 B)
+* **設計理念與教學心智**：徹底摒棄傳統除錯器將未執行行降至暗灰（`text-slate-400`，對比度僅 5.6:1）導致閱碼疲勞的缺點，引進「走廊點燈」軌跡心智模型：
+  * **未執行行 / 準備就緒**：提升為清亮銀白 **`text-slate-200`**（`#e2e8f0`，對比度 **12 : 1**），初進入除錯即清晰可辨，大幅降低閱讀門檻。
+  * **已執行過的行**：點亮為明亮雪白 **`text-slate-100`**（`#f1f5f9`，對比度 **14.5 : 1**），步進時留下清晰的控制流程執行足跡。
+  * **當前執行行**：維持純白 **`text-white font-bold`** + 藍紫色發光底色（`bg-indigo-600/28` + 左飾條 + 指針 `▶`），焦點立體分明。
+* **雙模 100% 同動**：題庫逐行除錯與自由沙盒逐行除錯同步實作，保證操作心智一致。
+
+#### 2. `[ A- | 15px | A+ ]` 4 檔程式碼與終端字級調整控制器
+* **精準 4 檔階梯（每次有感微調 2px）**：
+  * **小 (13px / 行高 22px)**：終端 12px（適合筆電小螢幕、高密度視野）
+  * **中 (15px / 行高 26px，預設 🌟)**：終端 14px（最均衡舒適的電腦教室常規閱讀尺寸）
+  * **大 (17px / 行高 30px)**：終端 15px（弱視學生友善、遠距離閱讀）
+  * **特大 (19px / 行高 34px)**：終端 16px（投影機全班教學展示模式）
+* **微型步進控制器體驗**：
+  * 點擊 `A-` / `A+` 一鍵有感升降檔，抵達極限（13px 或 19px）時自動變淡禁用（`disabled`）。
+  * 點擊中間數值（如 `15px`）可一秒還原預設尺寸。
+* **沙盒編輯器「行號與程式碼」像素級 100% 絕對對齊**：
+  * 左側行號欄與右側 `textarea` 動態綁定完全一致的像素行高（`lineHeight`），徹底杜絕多行捲動時行號垂直走位。
+* **右側標準輸出 (stdout) 微階比例同動**：
+  * 終端輸出等比例微階放大（12px ➜ 14px ➜ 15px ➜ 16px），既讓弱視學生看清輸出，又避免吃光終端縱向可視行數。
+* **填空框 (`blank-fill-input`) 自適應**：
+  * 填空輸入框高度與字級同步伸縮，排版流暢無破版。
+* **本機偏好持久化記憶 (localStorage)**：
+  * 自動儲存於 `codeshow_code_font_size`，換題目、重新整理或下週上課偏好不丟失。
 
 ---
 
