@@ -198,7 +198,6 @@ function getUserInfo() {
 
   return {
     email: userEmail || "訪客/學生",
-    ownerEmail: ownerEmail,
     isTeacher: isTeacher
   };
 }
@@ -799,6 +798,7 @@ function updateProblemInfo(course, oldProblemNo, newProblemNo, newChapter) {
  * 老師修正題目題號 (相容舊版介面)
  */
 function renameProblemNo(course, oldProblemNo, newProblemNo) {
+  assertTeacher();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(SHEET_PROBLEMS);
   var currChapter = "";

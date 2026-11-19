@@ -4,6 +4,61 @@
 
 ---
 
+## 完整部署與更新指南
+
+### 第一次全新部署
+
+1. **建立 Google 試算表**：
+   * 前往 [Google Sheets](https://sheets.new/) 建立一份空白試算表，命名為 `程式教學題庫管理系統`。
+2. **開啟 Apps Script 編輯器**：
+   * 選取上方選單 **「擴充功能」 $\to$ 「Apps Script」**，專案名稱可設為 `CodeShow_System`。
+3. **貼上原始碼**：
+   * 將本專案的 [`Code.gs`](./Code.gs) 內容貼入後端檔案（如有多位授課老師，可於 `ADDITIONAL_TEACHER_EMAILS` 填寫其 Email）。
+   * 點選 **「+」 $\to$ 「HTML」**，建立名為 **`Index`** 的檔案，貼入 [`Index.html`](./Index.html) 的內容。
+4. **首次授權與資料表初始化**：
+   * 編輯器頂部函式選取 **`initSpreadsheet`**，點擊 **「執行」**。
+   * 依瀏覽器指示完成 Google 帳號授權；執行完畢後 Sheets 會自動產生 `Courses` 與 `Problems` 兩個工作表，Google Drive 會自動建立圖片資料夾。
+5. **部署為 Web 應用程式**：
+   * 點擊右上角 **「部署」 $\to$ 「新增部署作業」**。
+   * 類型選取 **「網頁應用程式」 (Web app)**。
+   * **執行身分 (Execute as)**：選取 **`我 (Me)`**。
+   * **誰可以存取 (Who has access)**：
+     * **校內使用**：選取 `[您的網域] 內的任何人`。
+     * **跨校/公開分享**：選取 `所有已登入 Google 帳號的人`（因後端有 `assertTeacher()` 保護，學生僅具讀取權限，安全性無虞）。
+   * 點擊 **「部署」** 並複製產生的「網頁應用程式網址 (URL)」。
+
+---
+
+### 日常程式碼修改後的更新步驟 (重要 ⚠️)
+
+Google Apps Script 的網頁應用程式在修改程式碼後，**單純按儲存不會反映到線上正式環境**，請務必按照以下步驟更新：
+
+1. 在 Apps Script 編輯器中覆蓋貼上修改後的程式碼並存檔。
+2. 點選右上角 **「部署」 $\to$ 「管理部署作業」 (Manage deployments)**。
+3. 點選左側目前的正式部署項目，點選右上角的 **✏️「編輯」 (鉛筆圖示)**。
+4. **版本 (Version)** 下拉選單選擇 **「新版本」 (New version)**。
+5. 點擊 **「部署」**。此時線上發布的網址保持不變，但程式碼與骨架畫面即刻生效！
+
+---
+
+## 專案檔案清單
+
+| 檔案名稱 | 角色 | 說明 |
+|---|---|---|
+| [`Code.gs`](./Code.gs) | 後端控制層 (GAS) | 負責入口 `doGet()`、身分鑑權、快取、Sheets 欄位擴充 (含 Language 與 SourceCode)、圖片生命週期管理。 |
+| [`Index.html`](./Index.html) | 前端表現層 (SPA) | 內含 HTML、Vue 3、Prism.js、Pyodide/JSCPP 雙語言逐步執行器、變數表矩陣渲染器、anti-OCR 圖片檢視器、自由練習沙盒雙模系統。 |
+| [`Code.gs.v4_GCC`](./Code.gs.v4_GCC) | 歷史版本存檔 (v4.0) | 第四版 C++ 完整 GCC (Godbolt API) 逐行除錯與 Carbon 渲染穩定版本後端存檔。 |
+| [`Index.html.v4_GCC`](./Index.html.v4_GCC) | 歷史版本存檔 (v4.0) | 第四版 C++ 完整 GCC (Godbolt API) 逐行除錯與 Carbon 渲染穩定版本前端存檔。 |
+| [`Code.gs.v3_sandbox`](./Code.gs.v3_sandbox) | 歷史版本存檔 (v3.0) | 第三版自由練習沙盒與即時監看式穩定版本後端存檔。 |
+| [`Index.html.v3_sandbox`](./Index.html.v3_sandbox) | 歷史版本存檔 (v3.0) | 第三版自由練習沙盒與即時監看式穩定版本前端存檔。 |
+| [`Code.gs.v2_debug`](./Code.gs.v2_debug) | 歷史版本存檔 (v2.0) | 第二版題庫逐行除錯後端存檔。 |
+| [`Index.html.v2_debug`](./Index.html.v2_debug) | 歷史版本存檔 (v2.0) | 第二版題庫逐行除錯前端存檔。 |
+| [`Code.gs.v1_image_only`](./Code.gs.v1_image_only) | 歷史版本存檔 (v1.0) | 原始純圖片展示與管理後端（無原始碼欄位儲存）。 |
+| [`Index.html.v1_image_only`](./Index.html.v1_image_only) | 歷史版本存檔 (v1.0) | 原始純圖片防複製預覽與 Carbon 轉圖前端。 |
+| [`README.md`](./README.md) | 說明文檔 | 系統架構、逐步除錯器技術細節、防 OCR 策略、部署指南。 |
+
+---
+
 ## 系統整體架構圖
 
 ```mermaid
@@ -224,61 +279,6 @@ flowchart TD
 * **🪄 老師上傳彈窗「一鍵排版美化」**：
   * 在貼上程式碼區域配置「🪄 美化排版」快捷鍵，支援 C/C++ 嚴格 1TBS（左大括號同列、`else/catch` 同列、4 格縮排）與 Python PEP 8 規範，並完美保留 `??` 填空標籤。
   * 點擊後即刻連動下方的 Prism.js 語法高亮與動態防 OCR 噪點重繪，產出格式工整、賞心悅目的 Carbon 程式碼卡片。
-
----
-
-## 專案檔案清單
-
-| 檔案名稱 | 角色 | 說明 |
-|---|---|---|
-| [`Code.gs`](file:///Users/lincube/Documents/show_code/Code.gs) | 後端控制層 (GAS) | 負責入口 `doGet()`、身分鑑權、快取、Sheets 欄位擴充 (含 Language 與 SourceCode)、圖片生命週期管理。 |
-| [`Index.html`](file:///Users/lincube/Documents/show_code/Index.html) | 前端表現層 (SPA) | 內含 HTML、Vue 3、Prism.js、Pyodide/JSCPP 雙語言逐步執行器、變數表矩陣渲染器、anti-OCR 圖片檢視器、自由練習沙盒雙模系統。 |
-| [`Code.gs.v4_GCC`](file:///Users/lincube/Documents/show_code/Code.gs.v4_GCC) | 歷史版本存檔 (v4.0) | 第四版 C++ 完整 GCC (Godbolt API) 逐行除錯與 Carbon 渲染穩定版本後端存檔。 |
-| [`Index.html.v4_GCC`](file:///Users/lincube/Documents/show_code/Index.html.v4_GCC) | 歷史版本存檔 (v4.0) | 第四版 C++ 完整 GCC (Godbolt API) 逐行除錯與 Carbon 渲染穩定版本前端存檔。 |
-| [`Code.gs.v3_sandbox`](file:///Users/lincube/Documents/show_code/Code.gs.v3_sandbox) | 歷史版本存檔 (v3.0) | 第三版自由練習沙盒與即時監看式穩定版本後端存檔。 |
-| [`Index.html.v3_sandbox`](file:///Users/lincube/Documents/show_code/Index.html.v3_sandbox) | 歷史版本存檔 (v3.0) | 第三版自由練習沙盒與即時監看式穩定版本前端存檔。 |
-| [`Code.gs.v2_debug`](file:///Users/lincube/Documents/show_code/Code.gs.v2_debug) | 歷史版本存檔 (v2.0) | 第二版題庫逐行除錯後端存檔。 |
-| [`Index.html.v2_debug`](file:///Users/lincube/Documents/show_code/Index.html.v2_debug) | 歷史版本存檔 (v2.0) | 第二版題庫逐行除錯前端存檔。 |
-| [`Code.gs.v1_image_only`](file:///Users/lincube/Documents/show_code/Code.gs.v1_image_only) | 歷史版本存檔 (v1.0) | 原始純圖片展示與管理後端（無原始碼欄位儲存）。 |
-| [`Index.html.v1_image_only`](file:///Users/lincube/Documents/show_code/Index.html.v1_image_only) | 歷史版本存檔 (v1.0) | 原始純圖片防複製預覽與 Carbon 轉圖前端。 |
-| [`README.md`](file:///Users/lincube/Documents/show_code/README.md) | 說明文檔 | 系統架構、逐步除錯器技術細節、防 OCR 策略、部署指南。 |
-
----
-
-## 完整部署與更新指南
-
-### 第一次全新部署
-
-1. **建立 Google 試算表**：
-   * 前往 [Google Sheets](https://sheets.new/) 建立一份空白試算表，命名為 `程式教學題庫管理系統`。
-2. **開啟 Apps Script 編輯器**：
-   * 選取上方選單 **「擴充功能」 $\to$ 「Apps Script」**，專案名稱可設為 `CodeShow_System`。
-3. **貼上原始碼**：
-   * 將本專案的 [`Code.gs`](file:///Users/lincube/Documents/show_code/Code.gs) 內容貼入後端檔案（如有多位授課老師，可於 `ADDITIONAL_TEACHER_EMAILS` 填寫其 Email）。
-   * 點選 **「+」 $\to$ 「HTML」**，建立名為 **`Index`** 的檔案，貼入 [`Index.html`](file:///Users/lincube/Documents/show_code/Index.html) 的內容。
-4. **首次授權與資料表初始化**：
-   * 編輯器頂部函式選取 **`initSpreadsheet`**，點擊 **「執行」**。
-   * 依瀏覽器指示完成 Google 帳號授權；執行完畢後 Sheets 會自動產生 `Courses` 與 `Problems` 兩個工作表，Google Drive 會自動建立圖片資料夾。
-5. **部署為 Web 應用程式**：
-   * 點擊右上角 **「部署」 $\to$ 「新增部署作業」**。
-   * 類型選取 **「網頁應用程式」 (Web app)**。
-   * **執行身分 (Execute as)**：選取 **`我 (Me)`**。
-   * **誰可以存取 (Who has access)**：
-     * **校內使用**：選取 `[您的網域] 內的任何人`。
-     * **跨校/公開分享**：選取 `所有已登入 Google 帳號的人`（因後端有 `assertTeacher()` 保護，學生僅具讀取權限，安全性無虞）。
-   * 點擊 **「部署」** 並複製產生的「網頁應用程式網址 (URL)」。
-
----
-
-### 日常程式碼修改後的更新步驟 (重要 ⚠️)
-
-Google Apps Script 的網頁應用程式在修改程式碼後，**單純按儲存不會反映到線上正式環境**，請務必按照以下步驟更新：
-
-1. 在 Apps Script 編輯器中覆蓋貼上修改後的程式碼並存檔。
-2. 點選右上角 **「部署」 $\to$ 「管理部署作業」 (Manage deployments)**。
-3. 點選左側目前的正式部署項目，點選右上角的 **✏️「編輯」 (鉛筆圖示)**。
-4. **版本 (Version)** 下拉選單選擇 **「新版本」 (New version)**。
-5. 點擊 **「部署」**。此時線上發布的網址保持不變，但程式碼與骨架畫面即刻生效！
 
 ---
 
