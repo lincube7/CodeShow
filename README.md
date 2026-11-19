@@ -57,14 +57,14 @@ Google Apps Script 的網頁應用程式在修改程式碼後，**單純按儲�
 |---|---|---|
 | [`Code.gs`](./Code.gs) | 後端控制層 (GAS) | 負責入口 `doGet()`、身分鑑權、快取、Sheets 欄位擴充 (含 Language 與 SourceCode)、圖片生命週期管理。 |
 | [`Index.html`](./Index.html) | 前端表現層 (SPA) | 內含 HTML、Vue 3、Prism.js、Pyodide/JSCPP 雙語言逐步執行器、變數表矩陣渲染器、anti-OCR 圖片檢視器、自由練習沙盒雙模系統。 |
-| [`Code.gs.v4_GCC`](./Code.gs.v4_GCC) | 歷史版本存檔 (v4.0) | 第四版 C++ 完整 GCC (Godbolt API) 逐行除錯與 Carbon 渲染穩定版本後端存檔。 |
-| [`Index.html.v4_GCC`](./Index.html.v4_GCC) | 歷史版本存檔 (v4.0) | 第四版 C++ 完整 GCC (Godbolt API) 逐行除錯與 Carbon 渲染穩定版本前端存檔。 |
-| [`Code.gs.v3_sandbox`](./Code.gs.v3_sandbox) | 歷史版本存檔 (v3.0) | 第三版自由練習沙盒與即時監看式穩定版本後端存檔。 |
-| [`Index.html.v3_sandbox`](./Index.html.v3_sandbox) | 歷史版本存檔 (v3.0) | 第三版自由練習沙盒與即時監看式穩定版本前端存檔。 |
-| [`Code.gs.v2_debug`](./Code.gs.v2_debug) | 歷史版本存檔 (v2.0) | 第二版題庫逐行除錯後端存檔。 |
-| [`Index.html.v2_debug`](./Index.html.v2_debug) | 歷史版本存檔 (v2.0) | 第二版題庫逐行除錯前端存檔。 |
-| [`Code.gs.v1_image_only`](./Code.gs.v1_image_only) | 歷史版本存檔 (v1.0) | 原始純圖片展示與管理後端（無原始碼欄位儲存）。 |
-| [`Index.html.v1_image_only`](./Index.html.v1_image_only) | 歷史版本存檔 (v1.0) | 原始純圖片防複製預覽與 Carbon 轉圖前端。 |
+| [`Code.gs.v4_GCC`](./versions/Code.gs.v4_GCC) | 歷史版本存檔 (v4.0) | 第四版 C++ 完整 GCC (Godbolt API) 逐行除錯與 Carbon 渲染穩定版本後端存檔。 |
+| [`Index.html.v4_GCC`](./versions/Index.html.v4_GCC) | 歷史版本存檔 (v4.0) | 第四版 C++ 完整 GCC (Godbolt API) 逐行除錯與 Carbon 渲染穩定版本前端存檔。 |
+| [`Code.gs.v3_sandbox`](./versions/Code.gs.v3_sandbox) | 歷史版本存檔 (v3.0) | 第三版自由練習沙盒與即時監看式穩定版本後端存檔。 |
+| [`Index.html.v3_sandbox`](./versions/Index.html.v3_sandbox) | 歷史版本存檔 (v3.0) | 第三版自由練習沙盒與即時監看式穩定版本前端存檔。 |
+| [`Code.gs.v2_debug`](./versions/Code.gs.v2_debug) | 歷史版本存檔 (v2.0) | 第二版題庫逐行除錯後端存檔。 |
+| [`Index.html.v2_debug`](./versions/Index.html.v2_debug) | 歷史版本存檔 (v2.0) | 第二版題庫逐行除錯前端存檔。 |
+| [`Code.gs.v1_image_only`](./versions/Code.gs.v1_image_only) | 歷史版本存檔 (v1.0) | 原始純圖片展示與管理後端（無原始碼欄位儲存）。 |
+| [`Index.html.v1_image_only`](./versions/Index.html.v1_image_only) | 歷史版本存檔 (v1.0) | 原始純圖片防複製預覽與 Carbon 轉圖前端。 |
 | [`README.md`](./README.md) | 說明文檔 | 系統架構、逐步除錯器技術細節、防 OCR 策略、部署指南。 |
 
 ---
