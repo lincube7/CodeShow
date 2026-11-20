@@ -934,13 +934,29 @@
                   <span v-else-if="execEngineLoading" class="text-indigo-400 animate-pulse flex items-center gap-1 text-[11px]">
                     <span class="animate-spin text-xs">⏳</span> 載入執行環境...
                   </span>
-                  <span v-else-if="execFinished" class="text-emerald-400 text-[11px]">
-                    ✓ 執行完畢
+                  <span v-else-if="execFinished" :class="execHitStepLimit ? 'text-amber-400 font-semibold' : 'text-emerald-400'" class="text-[11px]">
+                    {{ execHitStepLimit ? '⚠️ 達步數上限 (疑似無窮迴圈)' : '✓ 執行完畢' }}
                   </span>
-                  <span v-else-if="totalSteps > 0" class="text-slate-400 text-[11px]">
-                    步驟 {{ currentStepIndex + 1 }} / {{ totalSteps }}
+                  <span v-else-if="totalSteps > 0" class="text-slate-400 text-[11px] flex items-center gap-1.5">
+                    <span>步驟 {{ currentStepIndex + 1 }} / {{ totalSteps }}</span>
+                    <span v-if="execHitStepLimit" class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30" title="程式執行已達單次追蹤上限，可能存在無窮迴圈">⚠️ 疑似無窮迴圈</span>
                   </span>
                 </div>
+              </div>
+
+              <!-- 題庫模式疑似無窮迴圈提示條 -->
+              <div
+                v-if="execHitStepLimit"
+                class="bg-amber-950/60 border-b border-amber-600/40 px-3 py-1.5 flex items-center justify-between text-xs text-amber-300 shrink-0 font-sans shadow-sm select-none">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-sm shrink-0">⚠️</span>
+                  <span class="truncate"><strong>偵測到疑似無窮迴圈：</strong>程式執行已達單次追蹤上限（已自動停止），可按「下一步」觀察變數與輸出！</span>
+                </div>
+                <button 
+                  type="button" 
+                  @click="execHitStepLimit = false" 
+                  class="text-amber-400/80 hover:text-amber-200 text-xs px-1.5 py-0.5 rounded hover:bg-amber-900/40 shrink-0 ml-2" 
+                  title="關閉提示條">✕</button>
               </div>
 
               <!-- 題庫模式 C++ 標頭檔支援提示條 -->
@@ -1430,8 +1446,9 @@
                   <!-- Row 1: 即時進度與動態狀態 -->
                   <div class="flex items-center justify-between text-xs font-mono text-slate-400 gap-2">
                     <div class="flex items-center gap-2 shrink-0">
-                      <span v-if="totalSteps > 0" class="text-slate-300 font-medium">
-                        執行步驟: <strong class="text-indigo-400 font-bold">{{ currentStepIndex + 1 }}</strong> / {{ totalSteps }}
+                      <span v-if="totalSteps > 0" class="text-slate-300 font-medium flex items-center gap-1.5">
+                        <span>執行步驟: <strong class="text-indigo-400 font-bold">{{ currentStepIndex + 1 }}</strong> / {{ totalSteps }}</span>
+                        <span v-if="execHitStepLimit" class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-sans" title="程式執行已達單次追蹤上限，可能存在無窮迴圈">⚠️ 疑似無窮迴圈</span>
                       </span>
                       <span v-else class="text-indigo-400 font-sans">
                         (準備就緒)
@@ -1447,10 +1464,12 @@
                         :class="[
                           'px-2 py-0.5 rounded text-[11px] font-semibold flex items-center gap-1 transition-all',
                           isAutoPlaying ? 'bg-amber-950/80 text-amber-300 border border-amber-500/50 animate-pulse' :
+                          (execFinished && execHitStepLimit) ? 'bg-amber-950/80 text-amber-300 border border-amber-500/50 font-bold' :
                           execFinished ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/50' :
                           (currentStepIndex >= 0 ? 'bg-slate-800 text-slate-300 border border-slate-700' : 'bg-slate-800/60 text-slate-400')
                         ]">
                         <template v-if="isAutoPlaying">⚡ 自動執行中...</template>
+                        <template v-else-if="execFinished && execHitStepLimit">⚠️ 達步數上限</template>
                         <template v-else-if="execFinished">✓ 已執行結束</template>
                         <template v-else-if="currentStepIndex >= 0">● 逐步追蹤中</template>
                         <template v-else>準備就緒</template>
@@ -2228,11 +2247,12 @@
                   <span v-if="sandboxExecuting" class="text-indigo-400 animate-pulse flex items-center gap-1 text-[11px]">
                     <span class="animate-spin text-xs">⏳</span> 運算中...
                   </span>
-                  <span v-else-if="sandboxMode === 'debug' && sandboxExecFinished" class="text-emerald-400 text-[11px]">
-                    ✓ 執行完畢
+                  <span v-else-if="sandboxMode === 'debug' && sandboxExecFinished" :class="sandboxHitStepLimit ? 'text-amber-400 font-semibold' : 'text-emerald-400'" class="text-[11px]">
+                    {{ sandboxHitStepLimit ? '⚠️ 達步數上限 (疑似無窮迴圈)' : '✓ 執行完畢' }}
                   </span>
-                  <span v-else-if="sandboxMode === 'debug' && sandboxTotalSteps > 0" class="text-slate-400 text-[11px]">
-                    步驟 {{ sandboxCurrentStepIndex + 1 }} / {{ sandboxTotalSteps }}
+                  <span v-else-if="sandboxMode === 'debug' && sandboxTotalSteps > 0" class="text-slate-400 text-[11px] flex items-center gap-1.5">
+                    <span>步驟 {{ sandboxCurrentStepIndex + 1 }} / {{ sandboxTotalSteps }}</span>
+                    <span v-if="sandboxHitStepLimit" class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30" title="程式執行已達單次追蹤上限，可能存在無窮迴圈">⚠️ 疑似無窮迴圈</span>
                   </span>
                   <span v-else-if="sandboxMode === 'debug' && sandboxCurrentStepIndex === -1" class="text-indigo-400 text-[11px]">
                     準備就緒（可編輯測資）
@@ -2241,6 +2261,21 @@
                     共 {{ sandboxLineCount }} 行
                   </span>
                 </div>
+              </div>
+
+              <!-- 沙盒除錯模式疑似無窮迴圈提示條 -->
+              <div
+                v-if="sandboxMode === 'debug' && sandboxHitStepLimit"
+                class="bg-amber-950/60 border-b border-amber-600/40 px-3 py-1.5 flex items-center justify-between text-xs text-amber-300 shrink-0 font-sans shadow-sm select-none">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-sm shrink-0">⚠️</span>
+                  <span class="truncate"><strong>偵測到疑似無窮迴圈：</strong>程式執行已達單次追蹤上限（已自動停止），可按「下一步」觀察變數與輸出！</span>
+                </div>
+                <button 
+                  type="button" 
+                  @click="sandboxHitStepLimit = false" 
+                  class="text-amber-400/80 hover:text-amber-200 text-xs px-1.5 py-0.5 rounded hover:bg-amber-900/40 shrink-0 ml-2" 
+                  title="關閉提示條">✕</button>
               </div>
 
               <!-- C++ 標頭檔支援提示條 (依當前引擎情境感知雙態呈現) -->
@@ -2782,8 +2817,9 @@
                   <!-- Row 1: 即時進度與動態狀態 -->
                   <div class="flex items-center justify-between text-xs font-mono text-slate-400 gap-2">
                     <div class="flex items-center gap-2 shrink-0">
-                      <span v-if="sandboxTotalSteps > 0" class="text-slate-300 font-medium">
-                        執行步驟: <strong class="text-indigo-400 font-bold">{{ sandboxCurrentStepIndex + 1 }}</strong> / {{ sandboxTotalSteps }}
+                      <span v-if="sandboxTotalSteps > 0" class="text-slate-300 font-medium flex items-center gap-1.5">
+                        <span>執行步驟: <strong class="text-indigo-400 font-bold">{{ sandboxCurrentStepIndex + 1 }}</strong> / {{ sandboxTotalSteps }}</span>
+                        <span v-if="sandboxHitStepLimit" class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-sans" title="程式執行已達單次追蹤上限，可能存在無窮迴圈">⚠️ 疑似無窮迴圈</span>
                       </span>
                       <span v-else-if="sandboxCurrentStepIndex === -1" class="text-indigo-400 font-sans">
                         (準備就緒)
@@ -2799,10 +2835,12 @@
                         :class="[
                           'px-2 py-0.5 rounded text-[11px] font-semibold flex items-center gap-1 transition-all',
                           sandboxIsAutoPlaying ? 'bg-amber-950/80 text-amber-300 border border-amber-500/50 animate-pulse' :
+                          (sandboxExecFinished && sandboxHitStepLimit) ? 'bg-amber-950/80 text-amber-300 border border-amber-500/50 font-bold' :
                           sandboxExecFinished ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/50' :
                           (sandboxCurrentStepIndex >= 0 ? 'bg-slate-800 text-slate-300 border border-slate-700' : 'bg-slate-800/60 text-slate-400')
                         ]">
                         <template v-if="sandboxIsAutoPlaying">⚡ 自動執行中...</template>
+                        <template v-else-if="sandboxExecFinished && sandboxHitStepLimit">⚠️ 達步數上限</template>
                         <template v-else-if="sandboxExecFinished">✓ 已執行結束</template>
                         <template v-else-if="sandboxCurrentStepIndex >= 0">● 逐步追蹤中</template>
                         <template v-else>準備就緒</template>
@@ -3160,6 +3198,7 @@
         };
         const executing = ref(false);
         const execFinished = ref(false);
+        const execHitStepLimit = ref(false);
         const stdinInput = ref('');
         const showRawStdin = ref(false);
         const currentStdinLine = ref(0);
@@ -4522,7 +4561,12 @@ namespace __codeshow_tracer__ {
             variables: item.vars || {},
             output: (item.out !== undefined) ? item.out : (idx === traceArr.length - 1 ? (programOutput || '') : ''),
             stdin_line: 0,
-            error: (idx === traceArr.length - 1 && hasExceeded) ? { message: '已達單步追蹤上限 (2,000 步)，後續步驟自動截斷！' } : null
+            error: (idx === traceArr.length - 1 && hasExceeded) ? {
+              type: 'StepLimitExceeded',
+              message: '已達單步追蹤上限 (2,000 步)，疑似進入無窮迴圈！後續步驟已自動截斷。',
+              line: item.line,
+              hint: '迴圈終止條件可能未滿足或迴圈變數未遞增（例如忘記寫 i++），請檢查迴圈更新邏輯。'
+            } : null
           }));
         };
 
@@ -4897,12 +4941,12 @@ namespace __codeshow_tracer__ {
           } else {
             raw = String(err || '未知執行錯誤');
           }
-          let errType = '執行錯誤';
+          let errType = (err && typeof err === 'object' && err.type) ? err.type : '執行錯誤';
           let cleanMsg = raw;
-          let hint = '';
+          let hint = (err && typeof err === 'object' && err.hint) ? err.hint : '';
 
           if (lang === 'cpp' || lang === 'c') {
-            errType = 'C++ 語法/執行錯誤';
+            errType = (err && err.type === 'StepLimitExceeded') ? '執行步數超限 (疑似無窮迴圈)' : 'C++ 語法/執行錯誤';
 
             // 擷取行號 (例如 line 5: 或 第 5 行 或 :5:)
             if (!lineNo) {
@@ -4918,27 +4962,33 @@ namespace __codeshow_tracer__ {
               .replace(/^語法錯誤\s*\(Syntax Error\):\s*/i, '')
               .trim();
 
-            // 智慧檢測：若程式碼或錯誤內容含有明顯的 Python 語法特徵
-            const currentCodeText = (typeof sandboxCode !== 'undefined' && sandboxCode.value) ? sandboxCode.value : ((typeof activeProblem !== 'undefined' && activeProblem.value) ? (activeProblem.value.sourceCode || '') : '');
-            const hasPythonSyntax = /(?:input\s*\(|print\s*\(|def\s+\w+\s*\(|for\s+\w+\s+in\s+range|elif\s|import\s+\w+|\*map\s*\(|n\s*=\s*int|split\s*\()/i.test(cleanMsg) ||
-                                    /(?:input\s*\(|print\s*\(|def\s+\w+\s*\(|for\s+\w+\s+in\s+range|elif\s|import\s+\w+|\*map\s*\(|split\s*\()/i.test(currentCodeText);
+            if (cleanMsg.includes('StepLimitExceeded') || (err && err.type === 'StepLimitExceeded')) {
+              errType = '執行步數超限 (疑似無窮迴圈)';
+              cleanMsg = (err && err.message) ? err.message : '程式執行已達單次追蹤上限，疑似進入無窮迴圈！';
+              hint = hint || '迴圈終止條件可能未滿足或迴圈變數未遞增（例如忘記寫 i++），請檢查迴圈更新邏輯。';
+            } else {
+              // 智慧檢測：若程式碼或錯誤內容含有明顯的 Python 語法特徵
+              const currentCodeText = (typeof sandboxCode !== 'undefined' && sandboxCode.value) ? sandboxCode.value : ((typeof activeProblem !== 'undefined' && activeProblem.value) ? (activeProblem.value.sourceCode || '') : '');
+              const hasPythonSyntax = /(?:input\s*\(|print\s*\(|def\s+\w+\s*\(|for\s+\w+\s+in\s+range|elif\s|import\s+\w+|\*map\s*\(|n\s*=\s*int|split\s*\()/i.test(cleanMsg) ||
+                                      /(?:input\s*\(|print\s*\(|def\s+\w+\s*\(|for\s+\w+\s+in\s+range|elif\s|import\s+\w+|\*map\s*\(|split\s*\()/i.test(currentCodeText);
 
-            if (hasPythonSyntax) {
-              hint = "💡 這段程式碼看起來是 Python 語法（例如 input()、range() 等），請點擊右上角切換至「🐍 Python (Pyodide)」模式執行！";
-            } else if (/expected\s*['"]?;/i.test(cleanMsg)) {
-              hint = "缺少分號 ';'，請檢查該行或前一行結尾是否有遺漏分號。";
-            } else if (/cannot find library/i.test(cleanMsg)) {
-              hint = "輕量瀏覽器沙盒不支援此標頭檔 (如 <string>, <vector> 等 STL 容器)。請切換至「完整 GCC」模式或使用原生陣列進行練習。";
-            } else if (/not declared in this scope/i.test(cleanMsg)) {
-              hint = "變數尚未宣告，使用前請先宣告其型別（例如 int, float, string 等）。";
-            } else if (/expected\s*['"]?[}{]/i.test(cleanMsg) || /unmatched/i.test(cleanMsg)) {
-              hint = "大括號 '{ }' 不對稱或遺漏，請檢查程式碼區塊是否完整閉合。";
-            } else if (/you must return a value/i.test(cleanMsg)) {
-              hint = "main 函式必須回傳整數值（建議在 main 最後加上 return 0;）。";
-            } else if (/division by zero/i.test(cleanMsg)) {
-              hint = "除以零錯誤，數值不能除以 0。";
-            } else if (/out of bounds/i.test(cleanMsg)) {
-              hint = "陣列索引超出範圍（Out of bounds），請檢查迴圈界限或陣列下標。";
+              if (hasPythonSyntax) {
+                hint = "💡 這段程式碼看起來是 Python 語法（例如 input()、range() 等），請點擊右上角切換至「🐍 Python (Pyodide)」模式執行！";
+              } else if (/expected\s*['"]?;/i.test(cleanMsg)) {
+                hint = "缺少分號 ';'，請檢查該行或前一行結尾是否有遺漏分號。";
+              } else if (/cannot find library/i.test(cleanMsg)) {
+                hint = "輕量瀏覽器沙盒不支援此標頭檔 (如 <string>, <vector> 等 STL 容器)。請切換至「完整 GCC」模式或使用原生陣列進行練習。";
+              } else if (/not declared in this scope/i.test(cleanMsg)) {
+                hint = "變數尚未宣告，使用前請先宣告其型別（例如 int, float, string 等）。";
+              } else if (/expected\s*['"]?[}{]/i.test(cleanMsg) || /unmatched/i.test(cleanMsg)) {
+                hint = "大括號 '{ }' 不對稱或遺漏，請檢查程式碼區塊是否完整閉合。";
+              } else if (/you must return a value/i.test(cleanMsg)) {
+                hint = "main 函式必須回傳整數值（建議在 main 最後加上 return 0;）。";
+              } else if (/division by zero/i.test(cleanMsg)) {
+                hint = "除以零錯誤，數值不能除以 0。";
+              } else if (/out of bounds/i.test(cleanMsg)) {
+                hint = "陣列索引超出範圍（Out of bounds），請檢查迴圈界限或陣列下標。";
+              }
             }
           } else {
             // Python (Pyodide) 錯誤解析
@@ -4953,8 +5003,8 @@ namespace __codeshow_tracer__ {
               }
             }
 
-            // 2. 擷取 Python 例外類型與訊息 (如 SyntaxError: invalid syntax)
-            const exMatch = raw.match(/\b([A-Za-z]+Error|[A-Za-z]+Exception):\s*(.*)/);
+            // 2. 擷取 Python 例外類型與訊息 (如 SyntaxError: invalid syntax 或 StepLimitExceeded)
+            const exMatch = raw.match(/\b([A-Za-z]+(?:Error|Exception|Exceeded)):\s*(.*)/);
             if (exMatch) {
               errType = exMatch[1];
               const desc = (exMatch[2] || '').trim();
@@ -4962,6 +5012,11 @@ namespace __codeshow_tracer__ {
               const descLower = desc.toLowerCase();
 
               switch (errType) {
+                case 'StepLimitExceeded':
+                  errType = '執行步數超限 (疑似無窮迴圈)';
+                  cleanMsg = desc || '程式執行已達單次追蹤上限，疑似進入無窮迴圈！';
+                  hint = hint || '程式執行已達 1,200 步追蹤上限！迴圈終止條件可能未滿足或迴圈變數未遞增（例如忘記寫 i += 1），請檢查迴圈更新邏輯。';
+                  break;
                 case 'SyntaxError':
                   if (descLower.includes('never closed') || descLower.includes('was never closed')) {
                     hint = "括號、引號或中括號未閉合，請確認是否有成對關閉。";
@@ -5052,6 +5107,9 @@ namespace __codeshow_tracer__ {
               };
               return false;
             }
+            if (res.program_error && res.program_error.includes('__CODESHOW_STEP_EXCEED__')) {
+              execHitStepLimit.value = true;
+            }
             recordedSteps.value = steps;
             return true;
           } catch(e) {
@@ -5094,6 +5152,9 @@ namespace __codeshow_tracer__ {
               };
               return false;
             }
+            if (res.program_error && res.program_error.includes('__CODESHOW_STEP_EXCEED__')) {
+              sandboxHitStepLimit.value = true;
+            }
             sandboxRecordedSteps.value = steps;
             return true;
           } catch(e) {
@@ -5112,6 +5173,7 @@ namespace __codeshow_tracer__ {
         const prepareExecutionTrace = async () => {
           if (!activeProblem.value) return false;
           execError.value = null;
+          execHitStepLimit.value = false;
           if (hasBlanks.value && !hasFilledAllBlanks.value) {
             showToast("請先填妥所有程式碼空格再開始執行！", "error");
             return false;
@@ -5334,6 +5396,18 @@ namespace __codeshow_tracer__ {
                 if (done) break;
               }
 
+              if (stepCount >= maxSteps) {
+                execHitStepLimit.value = true;
+                if (steps.length > 0) {
+                  steps[steps.length - 1].error = {
+                    type: 'StepLimitExceeded',
+                    message: '程式執行已達單次追蹤上限 (1,500 步)，疑似進入無窮迴圈！',
+                    line: lastLine || 1,
+                    hint: '迴圈終止條件可能未滿足或迴圈變數未遞增（例如忘記寫 i++），請檢查迴圈更新邏輯。'
+                  };
+                }
+              }
+
               recordedSteps.value = steps;
 
             } else {
@@ -5343,6 +5417,9 @@ namespace __codeshow_tracer__ {
               // 注入帶有 sys.settrace 的執行記錄器 (零外部伺服器開銷，全在瀏覽器 WASM 完成)
               const tracerScript = `
 import sys, json, io
+
+class StepLimitExceeded(BaseException):
+    pass
 
 class TrackingStdin(io.StringIO):
     def __init__(self, initial_value=''):
@@ -5369,6 +5446,7 @@ class TraceRecorder:
         self.stdin_tracker = stdin_tracker
         self.last_locals = {}
         self.last_line = None
+        self.hit_limit = False
 
     def serialize_val(self, v):
         if isinstance(v, (int, float, str, bool)) or v is None:
@@ -5383,15 +5461,17 @@ class TraceRecorder:
         return repr(v)
 
     def trace_callback(self, frame, event, arg):
-        if len(self.steps) >= self.max_steps:
-            return None
         if event == 'line':
             code_obj = frame.f_code
             if code_obj.co_filename == '<user_code>':
+                if len(self.steps) >= self.max_steps:
+                    self.hit_limit = True
+                    raise StepLimitExceeded("超過單次最大步進上限")
+
                 # 排除內建模組與隱藏變數
                 local_vars = {}
                 for k, v in frame.f_locals.items():
-                    if not k.startswith('__') and k not in ('sys', 'json', 'io', 'TraceRecorder', 'TrackingStdin'):
+                    if not k.startswith('__') and k not in ('sys', 'json', 'io', 'TraceRecorder', 'TrackingStdin', 'StepLimitExceeded'):
                         try:
                             local_vars[k] = self.serialize_val(v)
                         except Exception:
@@ -5418,6 +5498,7 @@ def __run_with_trace(user_code_str, stdin_str):
     sys.stdin = stdin_tracker
 
     error_info = None
+    hit_step_limit = False
     try:
         compiled = compile(user_code_str, "<user_code>", "exec")
     except SyntaxError as syn_err:
@@ -5428,6 +5509,8 @@ def __run_with_trace(user_code_str, stdin_str):
     try:
         sys.settrace(recorder.trace_callback)
         exec(compiled, {"__name__": "__main__"})
+    except StepLimitExceeded:
+        hit_step_limit = True
     except Exception as e:
         import sys
         tb = sys.exc_info()[2]
@@ -5449,6 +5532,16 @@ def __run_with_trace(user_code_str, stdin_str):
         sys.stdout = old_stdout
         sys.stdin = old_stdin
 
+    if hit_step_limit or recorder.hit_limit:
+        last_step_err = {
+            "type": "StepLimitExceeded",
+            "message": "程式執行已達單次追蹤上限 (1,200 步)，疑似進入無窮迴圈！",
+            "line": recorder.last_line if recorder.last_line is not None else 1,
+            "hint": "迴圈終止條件可能未滿足或迴圈變數未遞增（例如忘記寫 i += 1），請檢查迴圈更新邏輯。"
+        }
+        if recorder.steps:
+            recorder.steps[-1]["error"] = last_step_err
+
     if error_info:
         if recorder.steps:
             if error_info.get("line"):
@@ -5463,7 +5556,11 @@ def __run_with_trace(user_code_str, stdin_str):
                 "error": error_info
             })
 
-    return json.dumps(recorder.steps)
+    return json.dumps({
+        "steps": recorder.steps,
+        "hitStepLimit": hit_step_limit or recorder.hit_limit,
+        "maxSteps": recorder.max_steps
+    })
 `;
               await py.runPythonAsync(tracerScript);
 
@@ -5471,11 +5568,16 @@ def __run_with_trace(user_code_str, stdin_str):
               py.globals.set("__u_code", code);
               py.globals.set("__u_stdin", inputData);
               const jsonResult = await py.runPythonAsync("__run_with_trace(__u_code, __u_stdin)");
-              const steps = JSON.parse(jsonResult);
+              const parsed = JSON.parse(jsonResult);
+              const steps = Array.isArray(parsed) ? parsed : (parsed.steps || []);
+              const hitLimit = !Array.isArray(parsed) && Boolean(parsed.hitStepLimit);
               recordedSteps.value = steps;
+              execHitStepLimit.value = hitLimit;
             }
 
-            if (recordedSteps.value.length === 0) {
+            if (execHitStepLimit.value) {
+              showToast("⚠️ 偵測到疑似無窮迴圈：已達追蹤步數上限，已自動暫停並保留步驟供逐行觀察！", "warning");
+            } else if (recordedSteps.value.length === 0) {
               showToast("程式碼執行完畢（無可追蹤的執行行）");
             }
             return true;
@@ -5558,7 +5660,11 @@ def __run_with_trace(user_code_str, stdin_str):
             const lang = (activeProblem.value?.language || 'python').toLowerCase();
             execError.value = parseExecutionError(step.error, lang);
             stopAutoPlay();
-            showToast(`程式於第 ${step.line} 行發生執行錯誤！`, "error");
+            if (step.error.type === 'StepLimitExceeded' || (execError.value && execError.value.type && execError.value.type.includes('無窮迴圈'))) {
+              showToast(`⚠️ 已達步數上限 (疑似無窮迴圈)，已於第 ${step.line} 行停止！`, "warning");
+            } else {
+              showToast(`程式於第 ${step.line} 行發生執行錯誤！`, "error");
+            }
           } else {
             execError.value = null;
           }
@@ -5643,6 +5749,7 @@ def __run_with_trace(user_code_str, stdin_str):
         const resetExecution = (showToastMsg = true) => {
           stopAutoPlay();
           execError.value = null;
+          execHitStepLimit.value = false;
           currentStdinLine.value = 0;
           recordedSteps.value = []; // 清空預錄步驟，以便以最新輸入資料重新追蹤
           currentStepIndex.value = -1; // 回到未開始狀態，使 stdin 輸入框恢復為可編輯狀態
@@ -5962,6 +6069,7 @@ int main() {
         const sandboxCurrentExecutingLine = ref(null);
         const sandboxVariableList = ref([]);
         const sandboxExecFinished = ref(false);
+        const sandboxHitStepLimit = ref(false);
         const sandboxCurrentStdinLine = ref(0);
         const sandboxShowRawStdin = ref(false);
 
@@ -6378,6 +6486,7 @@ int main() {
           showWatchPanel.value = false;
           sandboxMode.value = 'editor';
           sandboxError.value = null;
+          sandboxHitStepLimit.value = false;
         };
 
         // ⚡ 直接執行 (Run) 模式：秒速跑完於右上角顯示輸出，代碼保持可編輯
@@ -6431,6 +6540,9 @@ int main() {
               const directScript = `
 import sys, io
 
+class StepLimitExceeded(BaseException):
+    pass
+
 __sb_stdout = io.StringIO()
 __sb_stdin = io.StringIO(__sb_input_str)
 __old_stdout = sys.stdout
@@ -6438,10 +6550,26 @@ __old_stdin = sys.stdin
 sys.stdout = __sb_stdout
 sys.stdin = __sb_stdin
 
+__direct_step_count = 0
+__hit_direct_limit = False
+
+def __direct_trace(frame, event, arg):
+    global __direct_step_count, __hit_direct_limit
+    if event == 'line' and frame.f_code.co_filename == '<user_code>':
+        __direct_step_count += 1
+        if __direct_step_count > 50000:
+            __hit_direct_limit = True
+            raise StepLimitExceeded("超過直接執行步數上限")
+    return __direct_trace
+
 try:
     __compiled = compile(__sb_code_str, "<user_code>", "exec")
+    sys.settrace(__direct_trace)
     exec(__compiled, {"__name__": "__main__"})
+except StepLimitExceeded:
+    __hit_direct_limit = True
 finally:
+    sys.settrace(None)
     sys.stdout = __old_stdout
     sys.stdin = __old_stdin
 
@@ -6451,7 +6579,17 @@ __sb_result = __sb_stdout.getvalue()
               py.globals.set("__sb_input_str", inputData);
               await py.runPythonAsync(directScript);
               const out = py.globals.get("__sb_result");
+              const hitLimit = Boolean(py.globals.get("__hit_direct_limit"));
               sandboxStdout.value = out || '(程式執行結束，無標準輸出)';
+              if (hitLimit) {
+                sandboxError.value = {
+                  type: '執行步數超限 (疑似無窮迴圈)',
+                  line: null,
+                  message: '程式執行超過直接執行步數上限 (50,000 步)，疑似進入無窮迴圈！已強制中止以防瀏覽器凍結。',
+                  hint: '請檢查是否有 while 或 for 迴圈缺少終止條件，或迴圈變數未遞增（例如忘記寫 i += 1）。可切換至「🔍 進入逐行除錯」一步一步觀察變數變化。'
+                };
+                showToast("⚠️ 偵測到疑似無窮迴圈，已停止執行！", "warning");
+              }
             }
           } catch (err) {
             console.error("沙盒執行失敗:", err);
@@ -6466,6 +6604,7 @@ __sb_result = __sb_stdout.getvalue()
           sandboxLastAction.value = 'debug';
           sandboxExecuting.value = true;
           sandboxError.value = null;
+          sandboxHitStepLimit.value = false;
           const lang = sandboxLang.value;
           const code = (sandboxCode.value || '').replace(/@@([\s\S]*?)@@/g, '$1');
           const inputData = sandboxStdin.value || '';
@@ -6668,12 +6807,27 @@ __sb_result = __sb_stdout.getvalue()
                 if (done) break;
               }
 
+              if (stepCount >= maxSteps) {
+                sandboxHitStepLimit.value = true;
+                if (steps.length > 0) {
+                  steps[steps.length - 1].error = {
+                    type: 'StepLimitExceeded',
+                    message: '程式執行已達單次追蹤上限 (1,500 步)，疑似進入無窮迴圈！',
+                    line: lastLine || 1,
+                    hint: '迴圈終止條件可能未滿足或迴圈變數未遞增（例如忘記寫 i++），請檢查迴圈更新邏輯。'
+                  };
+                }
+              }
+
               sandboxRecordedSteps.value = steps;
             } else {
               // Python (Pyodide sys.settrace)
               const py = await ensurePyodideLoaded();
               const tracerScript = `
 import sys, json, io
+
+class StepLimitExceeded(BaseException):
+    pass
 
 class TrackingStdin(io.StringIO):
     def __init__(self, initial_value=''):
@@ -6700,6 +6854,7 @@ class TraceRecorder:
         self.stdin_tracker = stdin_tracker
         self.last_locals = {}
         self.last_line = None
+        self.hit_limit = False
 
     def serialize_val(self, v):
         if isinstance(v, (int, float, str, bool)) or v is None:
@@ -6713,14 +6868,16 @@ class TraceRecorder:
         return repr(v)
 
     def trace_callback(self, frame, event, arg):
-        if len(self.steps) >= self.max_steps:
-            return None
         if event == 'line':
             code_obj = frame.f_code
             if code_obj.co_filename == '<user_code>':
+                if len(self.steps) >= self.max_steps:
+                    self.hit_limit = True
+                    raise StepLimitExceeded("超過單次最大步進上限")
+
                 local_vars = {}
                 for k, v in frame.f_locals.items():
-                    if not k.startswith('__') and k not in ('sys', 'json', 'io', 'TraceRecorder', 'TrackingStdin'):
+                    if not k.startswith('__') and k not in ('sys', 'json', 'io', 'TraceRecorder', 'TrackingStdin', 'StepLimitExceeded'):
                         try:
                             local_vars[k] = self.serialize_val(v)
                         except Exception:
@@ -6747,6 +6904,7 @@ def __run_with_trace(user_code_str, stdin_str):
     sys.stdin = stdin_tracker
 
     error_info = None
+    hit_step_limit = False
     try:
         compiled = compile(user_code_str, "<user_code>", "exec")
     except SyntaxError as syn_err:
@@ -6757,6 +6915,8 @@ def __run_with_trace(user_code_str, stdin_str):
     try:
         sys.settrace(recorder.trace_callback)
         exec(compiled, {"__name__": "__main__"})
+    except StepLimitExceeded:
+        hit_step_limit = True
     except Exception as e:
         import sys
         tb = sys.exc_info()[2]
@@ -6778,6 +6938,16 @@ def __run_with_trace(user_code_str, stdin_str):
         sys.stdout = old_stdout
         sys.stdin = old_stdin
 
+    if hit_step_limit or recorder.hit_limit:
+        last_step_err = {
+            "type": "StepLimitExceeded",
+            "message": "程式執行已達單次追蹤上限 (1,200 步)，疑似進入無窮迴圈！",
+            "line": recorder.last_line if recorder.last_line is not None else 1,
+            "hint": "迴圈終止條件可能未滿足或迴圈變數未遞增（例如忘記寫 i += 1），請檢查迴圈更新邏輯。"
+        }
+        if recorder.steps:
+            recorder.steps[-1]["error"] = last_step_err
+
     if error_info:
         if recorder.steps:
             if error_info.get("line"):
@@ -6792,16 +6962,26 @@ def __run_with_trace(user_code_str, stdin_str):
                 "error": error_info
             })
 
-    return json.dumps(recorder.steps)
+    return json.dumps({
+        "steps": recorder.steps,
+        "hitStepLimit": hit_step_limit or recorder.hit_limit,
+        "maxSteps": recorder.max_steps
+    })
 `;
               await py.runPythonAsync(tracerScript);
               py.globals.set("__u_code", code);
               py.globals.set("__u_stdin", inputData);
               const jsonResult = await py.runPythonAsync("__run_with_trace(__u_code, __u_stdin)");
-              sandboxRecordedSteps.value = JSON.parse(jsonResult);
+              const parsed = JSON.parse(jsonResult);
+              const steps = Array.isArray(parsed) ? parsed : (parsed.steps || []);
+              const hitLimit = !Array.isArray(parsed) && Boolean(parsed.hitStepLimit);
+              sandboxRecordedSteps.value = steps;
+              sandboxHitStepLimit.value = hitLimit;
             }
 
-            if (sandboxRecordedSteps.value.length === 0) {
+            if (sandboxHitStepLimit.value) {
+              showToast("⚠️ 偵測到疑似無窮迴圈：已達追蹤步數上限，已自動暫停並保留步驟供逐行觀察！", "warning");
+            } else if (sandboxRecordedSteps.value.length === 0) {
               showToast("程式碼執行完畢（無可追蹤的執行行）");
               return false;
             }
@@ -6884,7 +7064,11 @@ def __run_with_trace(user_code_str, stdin_str):
             const lang = sandboxLang.value;
             sandboxError.value = parseExecutionError(step.error, lang);
             stopSandboxAutoPlay();
-            showToast(`程式於第 ${step.line} 行發生執行錯誤！`, "error");
+            if (step.error.type === 'StepLimitExceeded' || (sandboxError.value && sandboxError.value.type && sandboxError.value.type.includes('無窮迴圈'))) {
+              showToast(`⚠️ 已達步數上限 (疑似無窮迴圈)，已於第 ${step.line} 行停止！`, "warning");
+            } else {
+              showToast(`程式於第 ${step.line} 行發生執行錯誤！`, "error");
+            }
           } else {
             sandboxError.value = null;
           }
@@ -6967,6 +7151,7 @@ def __run_with_trace(user_code_str, stdin_str):
         const resetSandboxExecution = () => {
           stopSandboxAutoPlay();
           sandboxError.value = null;
+          sandboxHitStepLimit.value = false;
           sandboxCurrentStdinLine.value = 0;
           sandboxRecordedSteps.value = []; // 清空預錄步驟，以便以最新輸入資料重新追蹤
           sandboxCurrentStepIndex.value = -1; // 回到未開始狀態，使 stdin 輸入框恢復為可編輯狀態
@@ -8235,6 +8420,7 @@ def __run_with_trace(user_code_str, stdin_str):
           execEngineLoading,
           executing,
           execFinished,
+          execHitStepLimit,
           totalSteps,
           currentStepIndex,
           parsedCodeLines,
@@ -8307,6 +8493,7 @@ def __run_with_trace(user_code_str, stdin_str):
           sandboxCurrentExecutingLine,
           sandboxVariableList,
           sandboxExecFinished,
+          sandboxHitStepLimit,
           sandboxCurrentStdinLine,
           sandboxShowRawStdin,
           sandboxEditorRef,
